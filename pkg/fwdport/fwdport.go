@@ -173,7 +173,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
 	downstreamStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
-	podRestartStopChannel := make(chan struct{}) // kubefwd hangs on exit if a separate stop channel is not used.
+  	podRestartStopChannel := make(chan struct{}) // kubefwd hangs on exit if a separate stop channel is not used.
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
@@ -183,7 +183,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	go func() {
 		<-pfo.ManualStopChan
 		close(downstreamStopChannel)
-		close(podRestartStopChannel)
+  		close(podRestartStopChannel)
 		close(pfStopChannel)
 	}()
 
@@ -201,8 +201,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	}
 
 	// Listen for pod is deleted
-	log.Infof("Listening for changes on pod %s", pod.Name)
-	go pfo.ListenUntilPodDeleted(podRestartStopChannel, pod)
+    pfo.StateWaiter.ListenUntilPodDeleted(podRestartStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
@@ -235,7 +234,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 		return err
 	} else {
-		pfo.shutdown()
+// 		pfo.shutdown()
 	}
 
 	return nil
@@ -329,6 +328,7 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 // todo: If the current pod is dying, look to add one that is already running, sync sometimes attaches to the dying pod rather than a healthy one.
 // todo: Anticipate a dying pod and sync before it stops serving traffic.
 func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
+	log.Infof("Listening for changes on pod %s", pod.Name)
 
 	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
 	if err != nil {
@@ -348,12 +348,12 @@ func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struc
 			break
 		}
 		switch event.Type {
-		case watch.Modified:
-			log.Warnf("Pod %s modified, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
-			waiter.ServiceFwd.SyncPodForwards(false)
-			return
+// 		case watch.Modified:
+// 			log.Warnf("MODIFIED: Pod %s modified, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
+// 			waiter.ServiceFwd.SyncPodForwards(false)
+// 			return
 		case watch.Deleted:
-			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
+			log.Warnf("DELETED: Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
 			waiter.ServiceFwd.SyncPodForwards(false)
 			return
 		}
@@ -379,7 +379,7 @@ func (pfo *PortForwardOpts) String() string {
 
 type PodStateWaiter interface {
 	WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error)
-	//ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod)
+    ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod)
 }
 
 type PodStateWaiterImpl struct {
