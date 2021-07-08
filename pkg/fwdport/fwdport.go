@@ -229,12 +229,10 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Blocking call
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
-		pfo.stopAndShutdown()
-
+		pfo.Stop()
 		return err
 	} else {
-		log.Errorf("Shutting down")
-		pfo.stopAndShutdown()
+		pfo.Stop() // Don't shut down, this gives connected clients time to move to a new pod.
 	}
 
 	return nil
@@ -289,7 +287,8 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 		return pod, nil
 	}
 
-	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
+	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(
+		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: pod.ObjectMeta.Name, Namespace: pod.ObjectMeta.Namespace}))
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +310,7 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 	// watcher until the pod status is running
 	for {
 		event, ok := <-watcher.ResultChan()
-		if !ok || event.Type == "ERROR" {
+		if !ok {
 			break
 		}
 		if event.Object != nil && event.Type == "MODIFIED" {
