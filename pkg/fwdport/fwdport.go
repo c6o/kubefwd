@@ -181,7 +181,6 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	// Close created downstream channels if there are stop signal from above
 	go func() {
-		log.Warnf("REL::PortForward Close...")
 		<-pfo.ManualStopChan
 		close(downstreamStopChannel)
   		close(podRestartStopChannel)
@@ -191,15 +190,12 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Waiting until the pod is running
 	pod, err := pfo.StateWaiter.WaitUntilPodRunning(downstreamStopChannel)
 	if err != nil {
-		log.Errorf("Shutting down pod listener, did not start...")
-
 		pfo.stopAndShutdown()
 		return err
 	} else if pod == nil {
 		// if err is not nil but pod is nil
 		// mean service deleted but pod is not runnning.
 		// No error, just return
-		log.Errorf("Pod not found for service...")
 		pfo.stopAndShutdown()
 		return nil
 	}
@@ -233,12 +229,12 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Blocking call
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
-		// Note, restarting port forwards when pods change does not work if this code is executed.
-		pfo.shutdown()
+		pfo.stopAndShutdown()
+
 		return err
 	} else {
-		log.Warnf("REL:: Shutdown port forward: %v", fw)
- 		pfo.shutdown()
+		log.Errorf("Shutting down")
+		pfo.stopAndShutdown()
 	}
 
 	return nil
@@ -286,18 +282,15 @@ func (pfo *PortForwardOpts) getBrothersInPodsAmount() int {
 func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error) {
 	pod, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Get(context.TODO(), waiter.PodName, metav1.GetOptions{})
 	if err != nil {
-		log.Errorf("Error getting pod...")
 		return nil, err
 	}
 
 	if pod.Status.Phase == v1.PodRunning {
-		//log.Warnf("Pod is running...")
 		return pod, nil
 	}
 
 	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(context.TODO(), metav1.SingleObject(pod.ObjectMeta))
 	if err != nil {
-		log.Warnf("Can't wait for pod to run....")
 		return nil, err
 	}
 
@@ -308,7 +301,6 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 	// we'll stop the watcher
 	// TODO: change the 300s timeout to custom settings.
 	go func() {
-		log.Warnf("WaitUntilPodRunning watcher stop: %s", pod.Name)
 		defer watcher.Stop()
 		select {
 		case <-stopChannel:
@@ -320,63 +312,48 @@ func (waiter *PodStateWaiterImpl) WaitUntilPodRunning(stopChannel <-chan struct{
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok || event.Type == "ERROR" {
-			log.Warnf("WaitUntilPodRunning Event: %s", event.Type)
 			break
 		}
 		if event.Object != nil && event.Type == "MODIFIED" {
 			changedPod := event.Object.(*v1.Pod)
-			log.Warnf("MODIFIED: Pod %s modified, set pod running.", changedPod.ObjectMeta.Name)
 			if changedPod.Status.Phase == v1.PodRunning {
 				return changedPod, nil
 			}
 		}
 	}
-	log.Errorf("No pod for service found")
-
 	return nil, nil
 }
 
 // listen for forwarded pod modification or deletion
 // todo: Anticipate a dying pod and sync before it stops serving traffic.
 func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
-	log.Infof("Listening for changes on pod %s", pod.Name)
 
 	watcher, err := waiter.ClientSet.CoreV1().Pods(waiter.Namespace).Watch(
 		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: pod.ObjectMeta.Name, Namespace: pod.ObjectMeta.Namespace}))
 	if err != nil {
-		log.Warnf("Error: %v", err)
 		return
 	}
 
 	// Listen for stop signal from above
 	go func() {
 		<-stopChannel
-		log.Warnf("ListenUntilPodDeleted watcher stop: Pod: %s", pod.Name)
 		watcher.Stop()
 	}()
 
 	// watcher until the pod is deleted, then trigger a syncpodforwards
 	for {
 		event, ok := <-watcher.ResultChan()
-		if !ok || event.Type == "ERROR" || event.Type == "ADDED" {
-			if (ok) {
-				log.Warnf("ListenUntilPodDeleted Event Type: %s", event.Type)
-			} else {
-				log.Warnf("EXITING watcher (OTHER)...")
-				return
-			}
+		if !ok {
+			return
 		}
 		switch event.Type {
-		case watch.Modified:
-			log.Warnf("MODIFIED: Pod %s modified, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
-			waiter.ServiceFwd.SyncPodForwards(false)
-			break
+		//case watch.Modified:
+		//	log.Warnf("MODIFIED: Pod %s modified, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
+		//	waiter.ServiceFwd.SyncPodForwards(false)
+		//	break
 		case watch.Deleted:
 			log.Warnf("DELETED: Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
 			waiter.ServiceFwd.SyncPodForwards(false)
-			break
-		default:
-			log.Warnf("UNKNOWN ListenUntilPodDeleted Event: %s", event.Type)
 			break
 		}
 	}
