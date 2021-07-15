@@ -18,6 +18,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -378,9 +379,33 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 		},
 	)
 
+	go func() {
+		for true {
+			if controller.HasSynced() {
+				log.Print("Port-Forward setup completed.")
+				port := getEnv("KUBEFWD_SYNCED_PORT", "5000")
+				resp, err := http.Get(fmt.Sprintf("http://%s:%v/%s", "localhost", port, "kubefwd-synced"))
+				if err != nil {
+					log.Fatal(err)
+				}
+				defer resp.Body.Close()
+				return
+			} else {
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+	}()
+
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)
 	log.Infof("Stopped watching Service events in namespace %s in %s context", opts.Namespace, opts.Context)
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
 
 // AddServiceHandler is the event handler for when a new service comes in from k8s
@@ -417,7 +442,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
 		PortMap:              opts.ParsePortMap(mappings),
-		ManualStopChannel: opts.ManualStopChannel,
+		ManualStopChannel:    opts.ManualStopChannel,
 	}
 
 	// Add the service to the catalog of services being forwarded
