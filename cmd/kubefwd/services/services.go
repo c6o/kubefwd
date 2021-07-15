@@ -384,7 +384,7 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 		for true {
 			if controller.HasSynced() {
 				log.Info("Port-Forward setup completed.")
-				port := getEnv("KUBEFWD_SYNCED_PORT", "5000")
+				port := getEnv("KUBEFWD_SYNCED_PORT", "9003")
 				resp, err := http.Get(fmt.Sprintf("http://%s:%v/%s", "localhost", port, "kubefwd-synced"))
 				if err != nil {
 					log.Error("Could not send sync event: ", err)
