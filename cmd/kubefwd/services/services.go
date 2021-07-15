@@ -17,6 +17,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -380,25 +381,25 @@ func (opts *NamespaceOpts) watchServiceEvents(stopListenCh <-chan struct{}) {
 	)
 
 	go func() {
-		// waiting for controller sync
-		for true {
-			if controller.HasSynced() {
-				log.Info("Port-Forward setup completed.")
-				port := getEnv("KUBEFWD_SYNCED_PORT", "9003")
-				resp, err := http.Get(fmt.Sprintf("http://%s:%v/%s", "localhost", port, "kubefwd-synced"))
-				if err != nil {
-					log.Error("Could not send sync event: ", err)
-				} else {
-					defer resp.Body.Close()
+		http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+			status :=
+				Status{
+					Ready: controller.HasSynced(),
 				}
-				return
-			}
-		}
+			json.NewEncoder(w).Encode(status)
+		})
+
+		port := getEnv("KUBEFWD_SYNCED_PORT", "9003")
+		log.Fatal(http.ListenAndServe(":"+port, nil))
 	}()
 
 	// Start the informer, blocking call until we receive a stop signal
 	controller.Run(stopListenCh)
 	log.Infof("Stopped watching Service events in namespace %s in %s context", opts.Namespace, opts.Context)
+}
+
+type Status struct {
+	Ready bool `json:"ready"`
 }
 
 func getEnv(key, fallback string) string {
