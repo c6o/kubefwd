@@ -122,12 +122,17 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 			log.Warnf("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
 			// We need to Ready interface only once per pod
 			// todo: use the endpoint in the event to set the values in the call below
-				localIp, err = fwdnet.ReadyInterface(svcName, pod.Name, svcFwd.ClusterN, svcFwd.NamespaceN, "")
+			port := event.Object.(*v1.Endpoints).Subsets[0].Ports[0].Port
+			ipString := event.Object.(*v1.Endpoints).Subsets[0].Addresses[0].IP
+			ip net.IP = {
+
+			}
+			localIp, err := fwdnet.ReadyInterfaceWithIP(ip, port)
 				if (err != nil) {
 					log.Errorf("Error readying headless forward: %s", err.Error())
 				}
 				pfo.LocalIp = localIp
-				// todo: followup the rest of things 
+				// todo: followup the rest of things
 			break
 		case watch.Modified: // update the tunnel
 			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
