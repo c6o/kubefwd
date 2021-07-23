@@ -3,15 +3,16 @@ package fwdservice
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/watch"
 	"net"
 	"strconv"
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/c6o/kubefwd/pkg/fwdnet"
 	"github.com/c6o/kubefwd/pkg/fwdport"
 	"github.com/c6o/kubefwd/pkg/fwdpub"
+	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,6 +73,8 @@ type ServiceFWD struct {
 	PortForwards        map[string][]*fwdport.PortForwardOpts
 	DoneChannel         chan struct{} // After shutdown is complete, this channel will be closed
 	ManualStopChannel   chan struct{}
+
+	EndpointWatcher       HeadlessServiceWatcher
 }
 
 /**
@@ -81,6 +84,51 @@ add port map
 type PortMap struct {
 	SourcePort string
 	TargetPort string
+}
+
+type HeadlessServiceWatcher interface {
+	WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service)
+}
+
+type HeadlessServiceWaiterImpl struct {
+	Namespace  string
+	ServiceName    string
+	ClientSet  kubernetes.Clientset
+}
+
+func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service) {
+
+	watcher, err := waiter.ClientSet.CoreV1().Endpoints(waiter.Namespace).Watch(
+		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: service.ObjectMeta.Name, Namespace: service.ObjectMeta.Namespace}))
+	if err != nil {
+		return
+	}
+
+	// Listen for stop signal from above
+	go func() {
+		<-stopChannel
+		watcher.Stop()
+	}()
+
+	// watcher until the pod is deleted, then trigger a syncpodforwards
+	for {
+		event, ok := <-watcher.ResultChan()
+		if !ok {
+			return
+		}
+		switch event.Type {
+		case watch.Added: // add the tunnel
+			log.Warnf("Endpoint added...")
+			log.Warnf("Service %s, Endpoint added.", service.ObjectMeta.Name)
+			break
+		case watch.Modified: // update the tunnel
+			log.Warnf("Service %s, Endpoint modified. %+v", service.ObjectMeta.Name, event)
+			break
+		case watch.Deleted:
+			log.Warnf("Service %s, Endpoint deleted. %+v", service.ObjectMeta.Name, event)
+			break
+		}
+	}
 }
 
 // String representation of a ServiceFWD returns a unique name

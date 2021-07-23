@@ -444,10 +444,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// Check if service has a valid config to do forwarding
 	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
-	if selector == "" {
-		log.Warnf("WARNING: No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
-		return
-	}
+
 
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
@@ -469,6 +466,17 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		DoneChannel:          make(chan struct{}),
 		PortMap:              opts.ParsePortMap(mappings),
 		ManualStopChannel:    opts.ManualStopChannel,
+		EndpointWatcher: &fwdservice.HeadlessServiceWaiterImpl{
+			Namespace: svc.Namespace,
+			ServiceName: svc.Name,
+			ClientSet: opts.ClientSet,
+		},
+	}
+
+	if selector == "" {
+		log.Warnf("WARNING: No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
+		go svcfwd.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
+		return
 	}
 
 	// Add the service to the catalog of services being forwarded
