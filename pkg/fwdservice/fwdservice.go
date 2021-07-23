@@ -124,14 +124,12 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 			// todo: use the endpoint in the event to set the values in the call below
 			port := event.Object.(*v1.Endpoints).Subsets[0].Ports[0].Port
 			ipString := event.Object.(*v1.Endpoints).Subsets[0].Addresses[0].IP
-			ip net.IP = {
-
-			}
-			localIp, err := fwdnet.ReadyInterfaceWithIP(ip, port)
+			var ip = net.IP(ipString)
+			_, err := fwdnet.ReadyInterfaceWithIP(ip, string(port))
 				if (err != nil) {
 					log.Errorf("Error readying headless forward: %s", err.Error())
 				}
-				pfo.LocalIp = localIp
+				//pfo.LocalIp = localIp
 				// todo: followup the rest of things
 			break
 		case watch.Modified: // update the tunnel
