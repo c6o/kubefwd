@@ -16,7 +16,9 @@ import (
 func ReadyInterface(svcName string, podName string, clusterN int, namespaceN int, port string) (net.IP, error) {
 
 	ip, _ := fwdIp.GetIp(svcName, podName, clusterN, namespaceN)
-
+	return ReadyInterfaceWithIP(ip, port)
+}
+func ReadyInterfaceWithIP(ip net.IP, port string) (net.IP, error) {
 	// lo means we are probably on linux and not mac
 	_, err := net.InterfaceByName("lo")
 	if err == nil || runtime.GOOS == "windows" {
