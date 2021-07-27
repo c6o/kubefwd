@@ -445,7 +445,6 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 	// Check if service has a valid config to do forwarding
 	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
 
-
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
 		ClientSet:            opts.ClientSet,
