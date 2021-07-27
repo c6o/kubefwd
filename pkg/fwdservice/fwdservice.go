@@ -186,9 +186,19 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	return podsEligible
 }
 
-func contains(ips []v1.EndpointAddress, str string) bool {
-	for _, ip := range ips {
-		if ip.IP == str {
+func containsPort(ports []int32, port int32) bool {
+	for _, p := range ports {
+		if p == port {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsAddress(addresses []v1.EndpointAddress, address string) bool {
+	for _, ip := range addresses {
+		if ip.IP == address {
 			return true
 		}
 	}
@@ -206,7 +216,23 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 		}
 		return nil
 	}
-	ips := endpoint.Subsets[0].Addresses // TODO: what if more or less subsets?
+
+	// iterate through all possible service ports
+	var servicePorts []int32
+	for _, port := range svcFwd.Svc.Spec.Ports {
+		servicePorts = append(servicePorts, port.TargetPort.IntVal)
+	}
+
+	// now capture the addresses of subsets with matching ports
+	var addresses []v1.EndpointAddress
+	for _, subset := range endpoint.Subsets {
+		for _, port := range subset.Ports {
+			if containsPort(servicePorts, port.Port) {
+				addresses = append(addresses, subset.Addresses...)
+				break
+			}
+		}
+	}
 
 	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
@@ -221,7 +247,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 	podsEligible := make([]v1.Pod, 0, len(pods.Items))
 
 	for _, pod := range pods.Items {
-		if contains(ips, pod.Status.PodIP) && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
+		if containsAddress(addresses, pod.Status.PodIP) && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
 			podsEligible = append(podsEligible, pod)
 		}
 	}
