@@ -3,11 +3,12 @@ package fwdservice
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/watch"
 	"net"
 	"strconv"
 	"sync"
 	"time"
+
+	"k8s.io/apimachinery/pkg/watch"
 
 	"github.com/c6o/kubefwd/pkg/fwdnet"
 	"github.com/c6o/kubefwd/pkg/fwdport"
@@ -124,9 +125,16 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 			// todo: use the endpoint in the event to set the values in the call below
 			port := event.Object.(*v1.Endpoints).Subsets[0].Ports[0].Port
 			ipString := event.Object.(*v1.Endpoints).Subsets[0].Addresses[0].IP
-			var ip = net.IP(ipString)
-			_, err := fwdnet.ReadyInterfaceWithIP(ip, string(port))
-				if (err != nil) {
+			var ipAddress, _, err = net.ParseCIDR(ipString + "/32")
+			log.Warnf("ip: %s", ipAddress.String())
+			_, err = fwdnet.ReadyInterfaceWithIP(ipAddress, string(port))
+			log.Warnf("Port-Forward: %s:%s to EndPoint %s:%d\n",
+				event.Object.(*v1.Endpoints).Namespace,
+				event.Object.(*v1.Endpoints).Name,
+				ipString,
+				port)
+
+			if err != nil {
 					log.Errorf("Error readying headless forward: %s", err.Error())
 				}
 				//pfo.LocalIp = localIp
