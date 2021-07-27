@@ -71,11 +71,11 @@ type ServiceFWD struct {
 
 	// A mapping of all the pods currently being forwarded.
 	// key = PortForwardOpts.String()
-	PortForwards        map[string][]*fwdport.PortForwardOpts
-	DoneChannel         chan struct{} // After shutdown is complete, this channel will be closed
-	ManualStopChannel   chan struct{}
+	PortForwards      map[string][]*fwdport.PortForwardOpts
+	DoneChannel       chan struct{} // After shutdown is complete, this channel will be closed
+	ManualStopChannel chan struct{}
 
-	EndpointWatcher       HeadlessServiceWatcher
+	EndpointWatcher HeadlessServiceWatcher
 }
 
 /**
@@ -92,9 +92,9 @@ type HeadlessServiceWatcher interface {
 }
 
 type HeadlessServiceWaiterImpl struct {
-	Namespace  string
-	ServiceName    string
-	ClientSet  kubernetes.Clientset
+	Namespace   string
+	ServiceName string
+	ClientSet   kubernetes.Clientset
 }
 
 func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service) {
@@ -135,10 +135,10 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 				port)
 
 			if err != nil {
-					log.Errorf("Error readying headless forward: %s", err.Error())
-				}
-				//pfo.LocalIp = localIp
-				// todo: followup the rest of things
+				log.Errorf("Error readying headless forward: %s", err.Error())
+			}
+			//pfo.LocalIp = localIp
+			// todo: followup the rest of things
 			break
 		case watch.Modified: // update the tunnel
 			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
@@ -186,6 +186,49 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	return podsEligible
 }
 
+func contains(ips []v1.EndpointAddress, str string) bool {
+	for _, ip := range ips {
+		if ip.IP == str {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
+	endpoint, err := svcFwd.ClientSet.CoreV1().Endpoints(svcFwd.Svc.Namespace).Get(context.TODO(), svcFwd.Svc.Name, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Warnf("WARNING: Endpoint not found for service %s: %s\n", svcFwd, err.Error())
+		} else {
+			log.Warnf("WARNING: Error in retrieving endpoint for %s: %s\n", svcFwd, err.Error())
+		}
+		return nil
+	}
+	ips := endpoint.Subsets[0].Addresses // TODO: what if more or less subsets?
+
+	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Warnf("WARNING: No Pods found for service %s: %s\n", svcFwd, err.Error())
+		} else {
+			log.Warnf("WARNING: Error in List pods for %s: %s\n", svcFwd, err.Error())
+		}
+		return nil
+	}
+
+	podsEligible := make([]v1.Pod, 0, len(pods.Items))
+
+	for _, pod := range pods.Items {
+		if contains(ips, pod.Status.PodIP) && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
+			podsEligible = append(podsEligible, pod)
+		}
+	}
+
+	return podsEligible
+}
+
 // SyncPodForwards selects one or all pods behind a service, and invokes
 // the forwarding setup for that or those pod(s). It will remove pods in-mem
 // that are no longer returned by k8s, should these not be correctly deleted.
@@ -194,7 +237,12 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 
 		defer func() { svcFwd.LastSyncedAt = time.Now() }()
 
-		k8sPods := svcFwd.GetPodsForService()
+		var k8sPods []v1.Pod
+		if svcFwd.Headless {
+			k8sPods = svcFwd.GetPodsForHeadlessService()
+		} else {
+			k8sPods = svcFwd.GetPodsForService()
+		}
 
 		// If no pods are found currently. Will try again next re-sync period.
 		if len(k8sPods) == 0 {
@@ -226,36 +274,35 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 			// service name, then subsequent pods from their pod name
 			if svcFwd.Headless {
 				svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
-				svcFwd.LoopPodsToForward(k8sPods, true)
-				return
-			}
-
-			// Check if currently we are forwarding a pod which is good to keep using
-			podNameToKeep := ""
-			for _, podName := range svcFwd.ListServicePodNames() {
-				if podNameToKeep != "" {
-					break
-				}
-				for _, pod := range k8sPods {
-					if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
-						podNameToKeep = pod.Name
+				//svcFwd.LoopPodsToForward(k8sPods, true) // not needed for now
+			} else {
+				// Check if currently we are forwarding a pod which is good to keep using
+				podNameToKeep := ""
+				for _, podName := range svcFwd.ListServicePodNames() {
+					if podNameToKeep != "" {
 						break
 					}
+					for _, pod := range k8sPods {
+						if podName == pod.Name && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
+							podNameToKeep = pod.Name
+							break
+						}
+					}
 				}
-			}
 
-			// Stop forwarding others, should there be. In case none of the currently
-			// forwarded pods are good to keep, podNameToKeep will be the empty string,
-			// and the comparison will mean we will remove all pods, which is the desired behaviour.
-			for _, podName := range svcFwd.ListServicePodNames() {
-				if podName != podNameToKeep {
-					svcFwd.RemoveServicePod(podName, true)
+				// Stop forwarding others, should there be. In case none of the currently
+				// forwarded pods are good to keep, podNameToKeep will be the empty string,
+				// and the comparison will mean we will remove all pods, which is the desired behaviour.
+				for _, podName := range svcFwd.ListServicePodNames() {
+					if podName != podNameToKeep {
+						svcFwd.RemoveServicePod(podName, true)
+					}
 				}
-			}
 
-			// If no good pod was being forwarded already, start one
-			if podNameToKeep == "" {
-				svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
+				// If no good pod was being forwarded already, start one
+				if podNameToKeep == "" {
+					svcFwd.LoopPodsToForward([]v1.Pod{k8sPods[0]}, false)
+				}
 			}
 		}
 	}
@@ -487,7 +534,7 @@ func (svcFwd *ServiceFWD) removeServicePodPort(servicePodName string, filter fun
 		} else {
 			svcFwd.PortForwards[servicePodName] = stay
 		}
-		log.Debugf("ServiceForward: Removed %d pods by key %s", len(pods) - len(stay), servicePodName)
+		log.Debugf("ServiceForward: Removed %d pods by key %s", len(pods)-len(stay), servicePodName)
 	}
 	svcFwd.NamespaceServiceLock.Unlock()
 }
