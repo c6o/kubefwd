@@ -95,6 +95,7 @@ type HeadlessServiceWaiterImpl struct {
 	Namespace   string
 	ServiceName string
 	ClientSet   kubernetes.Clientset
+	ServiceFwd  *ServiceFWD
 }
 
 func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service) {
@@ -123,31 +124,34 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 			log.Warnf("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
 			// We need to Ready interface only once per pod
 			// todo: use the endpoint in the event to set the values in the call below
-			port := event.Object.(*v1.Endpoints).Subsets[0].Ports[0].Port
-			ipString := event.Object.(*v1.Endpoints).Subsets[0].Addresses[0].IP
-			var ipAddress, _, err = net.ParseCIDR(ipString + "/32")
-			log.Warnf("ip: %s", ipAddress.String())
-			_, err = fwdnet.ReadyInterfaceWithIP(ipAddress, string(port))
-			log.Warnf("Port-Forward: %s:%s to EndPoint %s:%d\n",
-				event.Object.(*v1.Endpoints).Namespace,
-				event.Object.(*v1.Endpoints).Name,
-				ipString,
-				port)
+			// port := event.Object.(*v1.Endpoints).Subsets[0].Ports[0].Port
+			// ipString := event.Object.(*v1.Endpoints).Subsets[0].Addresses[0].IP
+			// var ipAddress, _, err = net.ParseCIDR(ipString + "/32")
+			// log.Warnf("ip: %s", ipAddress.String())
+			// _, err = fwdnet.ReadyInterfaceWithIP(ipAddress, string(port))
+			// log.Warnf("Port-Forward: %s:%s to EndPoint %s:%d\n",
+			// 	event.Object.(*v1.Endpoints).Namespace,
+			// 	event.Object.(*v1.Endpoints).Name,
+			// 	ipString,
+			// 	port)
 
-			if err != nil {
-				log.Errorf("Error readying headless forward: %s", err.Error())
-			}
-			//pfo.LocalIp = localIp
-			// todo: followup the rest of things
+			// if err != nil {
+			// 	log.Errorf("Error readying headless forward: %s", err.Error())
+			// }
+			waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Modified: // update the tunnel
 			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
-			break
-		case watch.Error:
-			log.Warnf("ERROR ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
+			//log.Warnf("%s", waiter.ServiceFwd.PortForwards)
+			waiter.ServiceFwd.DeleteServiceHandler()
+			waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Deleted:
 			log.Warnf("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
+			waiter.ServiceFwd.SyncPodForwards(true)
+			break
+		case watch.Error:
+			log.Warnf("ERROR ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
 			break
 		}
 	}
@@ -272,7 +276,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 
 		// If no pods are found currently. Will try again next re-sync period.
 		if len(k8sPods) == 0 {
-			log.Warnf("WARNING: No Running Pods returned for service %s", svcFwd)
+			log.Warnf("No Running Pods returned for service %s", svcFwd)
 			return
 		}
 

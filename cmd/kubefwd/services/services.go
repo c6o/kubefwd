@@ -465,15 +465,19 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		DoneChannel:          make(chan struct{}),
 		PortMap:              opts.ParsePortMap(mappings),
 		ManualStopChannel:    opts.ManualStopChannel,
-		EndpointWatcher: &fwdservice.HeadlessServiceWaiterImpl{
-			Namespace: svc.Namespace,
-			ServiceName: svc.Name,
-			ClientSet: opts.ClientSet,
-		},
+	}
+	svcfwd.EndpointWatcher = &fwdservice.HeadlessServiceWaiterImpl{
+		Namespace:   svc.Namespace,
+		ServiceName: svc.Name,
+		ClientSet:   opts.ClientSet,
+		ServiceFwd:  svcfwd,
 	}
 
 	if selector == "" {
-		log.Warnf("WARNING: No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
+		if svc.Namespace == "default" && svc.Name == "kubernetes" {
+			return
+		}
+		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
 		go svcfwd.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
 		return
 	}
