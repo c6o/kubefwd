@@ -375,6 +375,8 @@ type NamespaceOpts struct {
 	PortMapping []string
 
 	ManualStopChannel chan struct{}
+
+	EndpointWatcher HeadlessServiceWatcher
 }
 
 // watchServiceEvents sets up event handlers to act on service-related events.
@@ -434,6 +436,58 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+type HeadlessServiceWatcher interface {
+	WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service)
+}
+
+type HeadlessServiceWaiterImpl struct {
+	Namespace   string
+	ServiceName string
+	ClientSet   kubernetes.Clientset
+	ServiceFwd  *fwdservice.ServiceFWD
+}
+
+func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service) {
+
+	watcher, err := waiter.ClientSet.CoreV1().Endpoints(waiter.Namespace).Watch(
+		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: service.ObjectMeta.Name, Namespace: service.ObjectMeta.Namespace}))
+	if err != nil {
+		return
+	}
+
+	// Listen for stop signal from above
+	go func() {
+		<-stopChannel
+		watcher.Stop()
+	}()
+
+	// watcher until the pod is deleted, then trigger a syncpodforwards
+	for {
+		event, ok := <-watcher.ResultChan()
+		if !ok {
+			return
+		}
+		log.Warnf("Event: %s", event.Type)
+		switch event.Type {
+		case watch.Added: // add the tunnel
+			log.Warnf("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
+			waiter.ServiceFwd.SyncPodForwards(true)
+			break
+		case watch.Modified: // update the tunnel
+			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
+			waiter.ServiceFwd.SyncPodForwards(true)
+			break
+		case watch.Deleted: // remove the tunnel
+			log.Warnf("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
+			waiter.ServiceFwd.SyncPodForwards(true)
+			break
+		case watch.Error:
+			log.Warnf("ERROR ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
+			break
+		}
+	}
+}
+
 // AddServiceHandler is the event handler for when a new service comes in from k8s
 // (the initial list of services will also be coming in using this event for each).
 func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
@@ -466,7 +520,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PortMap:              opts.ParsePortMap(mappings),
 		ManualStopChannel:    opts.ManualStopChannel,
 	}
-	svcfwd.EndpointWatcher = &fwdservice.HeadlessServiceWaiterImpl{
+	opts.EndpointWatcher = &HeadlessServiceWaiterImpl{
 		Namespace:   svc.Namespace,
 		ServiceName: svc.Name,
 		ClientSet:   opts.ClientSet,
@@ -478,8 +532,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 			return
 		}
 		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
-		go svcfwd.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
-		return
+		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
 	}
 
 	// Add the service to the catalog of services being forwarded

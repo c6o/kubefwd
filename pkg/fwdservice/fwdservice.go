@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/watch"
-
 	"github.com/c6o/kubefwd/pkg/fwdnet"
 	"github.com/c6o/kubefwd/pkg/fwdport"
 	"github.com/c6o/kubefwd/pkg/fwdpub"
@@ -74,8 +72,6 @@ type ServiceFWD struct {
 	PortForwards      map[string][]*fwdport.PortForwardOpts
 	DoneChannel       chan struct{} // After shutdown is complete, this channel will be closed
 	ManualStopChannel chan struct{}
-
-	EndpointWatcher HeadlessServiceWatcher
 }
 
 /**
@@ -85,76 +81,6 @@ add port map
 type PortMap struct {
 	SourcePort string
 	TargetPort string
-}
-
-type HeadlessServiceWatcher interface {
-	WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service)
-}
-
-type HeadlessServiceWaiterImpl struct {
-	Namespace   string
-	ServiceName string
-	ClientSet   kubernetes.Clientset
-	ServiceFwd  *ServiceFWD
-}
-
-func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service) {
-
-	watcher, err := waiter.ClientSet.CoreV1().Endpoints(waiter.Namespace).Watch(
-		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: service.ObjectMeta.Name, Namespace: service.ObjectMeta.Namespace}))
-	if err != nil {
-		return
-	}
-
-	// Listen for stop signal from above
-	go func() {
-		<-stopChannel
-		watcher.Stop()
-	}()
-
-	// watcher until the pod is deleted, then trigger a syncpodforwards
-	for {
-		event, ok := <-watcher.ResultChan()
-		if !ok {
-			return
-		}
-		log.Warnf("Event: %s", event.Type)
-		switch event.Type {
-		case watch.Added: // add the tunnel
-			log.Warnf("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
-			// We need to Ready interface only once per pod
-			// todo: use the endpoint in the event to set the values in the call below
-			// port := event.Object.(*v1.Endpoints).Subsets[0].Ports[0].Port
-			// ipString := event.Object.(*v1.Endpoints).Subsets[0].Addresses[0].IP
-			// var ipAddress, _, err = net.ParseCIDR(ipString + "/32")
-			// log.Warnf("ip: %s", ipAddress.String())
-			// _, err = fwdnet.ReadyInterfaceWithIP(ipAddress, string(port))
-			// log.Warnf("Port-Forward: %s:%s to EndPoint %s:%d\n",
-			// 	event.Object.(*v1.Endpoints).Namespace,
-			// 	event.Object.(*v1.Endpoints).Name,
-			// 	ipString,
-			// 	port)
-
-			// if err != nil {
-			// 	log.Errorf("Error readying headless forward: %s", err.Error())
-			// }
-			waiter.ServiceFwd.SyncPodForwards(true)
-			break
-		case watch.Modified: // update the tunnel
-			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
-			//log.Warnf("%s", waiter.ServiceFwd.PortForwards)
-			waiter.ServiceFwd.DeleteServiceHandler()
-			waiter.ServiceFwd.SyncPodForwards(true)
-			break
-		case watch.Deleted:
-			log.Warnf("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
-			waiter.ServiceFwd.SyncPodForwards(true)
-			break
-		case watch.Error:
-			log.Warnf("ERROR ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
-			break
-		}
-	}
 }
 
 // String representation of a ServiceFWD returns a unique name
