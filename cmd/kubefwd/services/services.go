@@ -452,6 +452,7 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 	watcher, err := waiter.ClientSet.CoreV1().Endpoints(waiter.Namespace).Watch(
 		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: service.ObjectMeta.Name, Namespace: service.ObjectMeta.Namespace}))
 	if err != nil {
+		log.Errorf("Cannot watch endpoints for service %s in namespace %s", service.ObjectMeta.Name, waiter.Namespace)
 		return
 	}
 
@@ -465,6 +466,7 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
+			log.Errorf("ENDPOINT: Couldn't receive message")
 			return
 		}
 		log.Warnf("Event: %s", event.Type)
@@ -482,7 +484,7 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 			waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Error:
-			log.Warnf("ERROR ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
+			log.Errorf("ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
 			break
 		}
 	}
