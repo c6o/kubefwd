@@ -203,7 +203,9 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 		// If no pods are found currently. Will try again next re-sync period.
 		if len(k8sPods) == 0 {
 			log.Warnf("No Running Pods returned for service %s", svcFwd)
-			return
+			if !svcFwd.Headless { // if a headless sevice then we should not return since it will need to be removed if no pods are present
+				return
+			}
 		}
 
 		// Check if the pods currently being forwarded still exist in k8s and if
