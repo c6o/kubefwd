@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -230,13 +229,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	// Blocking call
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
-		// TODO: need to find a cleaner way to do this
-		if strings.Contains(err.Error(), "unable to listen on any of the requested ports") {
-			pfo.Stop()
-		} else {
-			pfo.shutdown()
-		}
-
+		pfo.shutdown()
 		return err
 	} else { // service deleted OR kill SIGTERM
 		pfo.shutdown()

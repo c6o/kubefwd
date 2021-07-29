@@ -3,8 +3,8 @@ package fwdsvcregistry
 import (
 	"sync"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/c6o/kubefwd/pkg/fwdservice"
+	log "github.com/sirupsen/logrus"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
@@ -48,7 +48,7 @@ func Done() <-chan struct{} {
 
 // Add will add this service to the registry of services configured to do forwarding
 // (if it wasn't already configured) and start the port-forwarding process.
-func Add(serviceFwd *fwdservice.ServiceFWD) {
+func Add(serviceFwd *fwdservice.ServiceFWD, sync bool) {
 	// If we are already shutting down, don't add a new service anymore.
 	select {
 	case <-svcRegistry.shutDownSignal:
@@ -68,7 +68,9 @@ func Add(serviceFwd *fwdservice.ServiceFWD) {
 	log.Debugf("Registry: Start forwarding service %s", serviceFwd)
 
 	// Start port forwarding
-	go serviceFwd.SyncPodForwards(false)
+	if sync {
+		go serviceFwd.SyncPodForwards(false)
+	}
 
 	// Schedule a re sync every x minutes to deal with potential connection errors.
 	// @TODO review the need for this, if we keep it make if configurable

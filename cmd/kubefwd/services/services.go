@@ -473,7 +473,7 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 		switch event.Type {
 		case watch.Added: // add the tunnel
 			log.Warnf("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
-			waiter.ServiceFwd.SyncPodForwards(true)
+			waiter.ServiceFwd.SyncPodForwards(false)
 			break
 		case watch.Modified: // update the tunnel
 			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
@@ -529,16 +529,18 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		ServiceFwd:  svcfwd,
 	}
 
-	if selector == "" {
-		if svc.Namespace == "default" && svc.Name == "kubernetes" {
-			return
-		}
-		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
-		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
+	if svc.Namespace == "default" && svc.Name == "kubernetes" { // we should not tunnel the k8s API
+		return
 	}
 
-	// Add the service to the catalog of services being forwarded
-	fwdsvcregistry.Add(svcfwd)
+	if selector == "" && svcfwd.Headless {
+		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
+		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
+		fwdsvcregistry.Add(svcfwd, false)
+	} else {
+		// Add the service to the catalog of services being forwarded
+		fwdsvcregistry.Add(svcfwd, true)
+	}
 }
 
 // DeleteServiceHandler is the event handler for when a service gets deleted in k8s.
