@@ -375,6 +375,8 @@ type NamespaceOpts struct {
 	PortMapping []string
 
 	ManualStopChannel chan struct{}
+
+	EndpointWatcher HeadlessServiceWatcher
 }
 
 // watchServiceEvents sets up event handlers to act on service-related events.
@@ -434,6 +436,60 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+type HeadlessServiceWatcher interface {
+	WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service)
+}
+
+type HeadlessServiceWaiterImpl struct {
+	Namespace   string
+	ServiceName string
+	ClientSet   kubernetes.Clientset
+	ServiceFwd  *fwdservice.ServiceFWD
+}
+
+func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan struct{}, service *v1.Service) {
+
+	watcher, err := waiter.ClientSet.CoreV1().Endpoints(waiter.Namespace).Watch(
+		context.TODO(), metav1.SingleObject(metav1.ObjectMeta{Name: service.ObjectMeta.Name, Namespace: service.ObjectMeta.Namespace}))
+	if err != nil {
+		log.Errorf("Cannot watch endpoints for service %s in namespace %s", service.ObjectMeta.Name, waiter.Namespace)
+		return
+	}
+
+	// Listen for stop signal from above
+	go func() {
+		<-stopChannel
+		watcher.Stop()
+	}()
+
+	// watcher until the pod is deleted, then trigger a syncpodforwards
+	for {
+		event, ok := <-watcher.ResultChan()
+		if !ok {
+			log.Errorf("ENDPOINT: Couldn't receive message")
+			return
+		}
+		log.Infof("Event: %s", event.Type)
+		switch event.Type {
+		case watch.Added: // add the tunnel
+			log.Infof("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
+			go waiter.ServiceFwd.SyncPodForwards(false)
+			break
+		case watch.Modified: // update the tunnel
+			log.Infof("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
+			go waiter.ServiceFwd.SyncPodForwards(true)
+			break
+		case watch.Deleted: // remove the tunnel
+			log.Infof("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
+			go waiter.ServiceFwd.SyncPodForwards(true)
+			break
+		case watch.Error:
+			log.Errorf("ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
+			break
+		}
+	}
+}
+
 // AddServiceHandler is the event handler for when a new service comes in from k8s
 // (the initial list of services will also be coming in using this event for each).
 func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
@@ -444,10 +500,6 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// Check if service has a valid config to do forwarding
 	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
-	if selector == "" {
-		log.Warnf("WARNING: No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
-		return
-	}
 
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
@@ -470,9 +522,26 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PortMap:              opts.ParsePortMap(mappings),
 		ManualStopChannel:    opts.ManualStopChannel,
 	}
+	opts.EndpointWatcher = &HeadlessServiceWaiterImpl{
+		Namespace:   svc.Namespace,
+		ServiceName: svc.Name,
+		ClientSet:   opts.ClientSet,
+		ServiceFwd:  svcfwd,
+	}
 
-	// Add the service to the catalog of services being forwarded
-	fwdsvcregistry.Add(svcfwd)
+	if svc.Namespace == "default" && svc.Name == "kubernetes" { // we should not tunnel the k8s API
+		return
+	}
+
+	// TODO: is the selector necessary?
+	if selector == "" && svcfwd.Headless {
+		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
+		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
+		fwdsvcregistry.Add(svcfwd, false)
+	} else {
+		// Add the service to the catalog of services being forwarded
+		fwdsvcregistry.Add(svcfwd, true)
+	}
 }
 
 // DeleteServiceHandler is the event handler for when a service gets deleted in k8s.

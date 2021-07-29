@@ -321,3 +321,17 @@ func (mr *MockPodStateWaiterMockRecorder) WaitUntilPodRunning(stopChannel interf
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitUntilPodRunning", reflect.TypeOf((*MockPodStateWaiter)(nil).WaitUntilPodRunning), stopChannel)
 }
+
+// ListenUntilPodDeleted mocks base method
+func (m *MockPodStateWaiter) ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "ListenUntilPodDeleted", stopChannel, pod)
+	return
+}
+
+// ListenUntilPodDeleted indicates an expected call of ListenUntilPodDeleted
+func (mr *MockPodStateWaiterMockRecorder) ListenUntilPodDeleted(stopChannel interface{}, pod interface {}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListenUntilPodDeleted", reflect.TypeOf((*MockPodStateWaiter)(nil).ListenUntilPodDeleted), stopChannel, pod)
+}
+

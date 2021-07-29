@@ -13,9 +13,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/httpstream"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/c6o/kubefwd/pkg/fwdnet"
 	"github.com/c6o/kubefwd/pkg/fwdpub"
+	log "github.com/sirupsen/logrus"
 	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,7 +55,7 @@ type HostsOperator interface {
 	RemoveInterfaceAlias()
 }
 
-type PortForwardHelperImpl struct {}
+type PortForwardHelperImpl struct{}
 
 type PortForwardOptsHostsOperator struct {
 	Pfo *PortForwardOpts
@@ -108,11 +108,11 @@ type PortForwardOpts struct {
 	// while > 0 is an external namespace
 	NamespaceN int
 
-	Domain            string
-	HostsParams       *HostsParams
-	Hosts             []string
-	ManualStopChan    chan struct{} // Send a signal on this to stop the portforwarding
-	DoneChan          chan struct{} // Listen on this channel for when the shutdown is completed.
+	Domain         string
+	HostsParams    *HostsParams
+	Hosts          []string
+	ManualStopChan chan struct{} // Send a signal on this to stop the portforwarding
+	DoneChan       chan struct{} // Listen on this channel for when the shutdown is completed.
 
 	StateWaiter       PodStateWaiter
 	PortForwardHelper PortForwardHelper
@@ -173,7 +173,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	pfStopChannel := make(chan struct{}, 1)      // Signal that k8s forwarding takes as input for us to signal when to stop
 	downstreamStopChannel := make(chan struct{}) // @TODO: can this be the same as pfStopChannel?
-  	podRestartStopChannel := make(chan struct{}) // kubefwd hangs on exit if a separate stop channel is not used.
+	podRestartStopChannel := make(chan struct{}) // kubefwd hangs on exit if a separate stop channel is not used.
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
@@ -183,7 +183,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	go func() {
 		<-pfo.ManualStopChan
 		close(downstreamStopChannel)
-  		close(podRestartStopChannel)
+		close(podRestartStopChannel)
 		close(pfStopChannel)
 	}()
 
@@ -201,7 +201,7 @@ func PortForward(pfo *PortForwardOpts) error {
 	}
 
 	// Listen for pod is deleted
-    go pfo.StateWaiter.ListenUntilPodDeleted(podRestartStopChannel, pod)
+	go pfo.StateWaiter.ListenUntilPodDeleted(podRestartStopChannel, pod)
 
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
@@ -230,7 +230,6 @@ func PortForward(pfo *PortForwardOpts) error {
 	if err = pfo.PortForwardHelper.ForwardPorts(fw); err != nil {
 		log.Errorf("ForwardPorts error: %s", err.Error())
 		pfo.shutdown()
-		//pfo.Stop()
 		return err
 	} else {
 		pfo.shutdown()
@@ -350,7 +349,7 @@ func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struc
 		switch event.Type {
 		case watch.Deleted:
 			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
-			waiter.ServiceFwd.SyncPodForwards(true)
+			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		}
 	}
@@ -375,7 +374,7 @@ func (pfo *PortForwardOpts) String() string {
 
 type PodStateWaiter interface {
 	WaitUntilPodRunning(stopChannel <-chan struct{}) (*v1.Pod, error)
-    ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod)
+	ListenUntilPodDeleted(stopChannel <-chan struct{}, pod *v1.Pod)
 }
 
 type PodStateWaiterImpl struct {

@@ -1,10 +1,10 @@
 package fwdport
 
 import (
+	"github.com/c6o/kubefwd/pkg/fwdpub"
 	"github.com/golang/mock/gomock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"github.com/c6o/kubefwd/pkg/fwdpub"
 	v1 "k8s.io/api/core/v1"
 	"testing"
 )
@@ -48,6 +48,7 @@ func TestPortForward_RemovesItselfFromServiceFwd_AfterPortForwardErr(t *testing.
 	pfHelper.EXPECT().GetPortForwardRequest(gomock.Any()).Return(nil)
 	hostsOperator.EXPECT().AddHosts().Times(1)
 	waiter.EXPECT().WaitUntilPodRunning(gomock.Any()).Return(&v1.Pod{Status: v1.PodStatus{Phase: v1.PodRunning}}, nil)
+	waiter.EXPECT().ListenUntilPodDeleted(gomock.Any(), gomock.Any()).Return()
 	pfHelper.EXPECT().NewDialer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	pfHelper.EXPECT().
 		NewOnAddresses(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
