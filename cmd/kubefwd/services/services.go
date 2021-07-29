@@ -469,18 +469,18 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 			log.Errorf("ENDPOINT: Couldn't receive message")
 			return
 		}
-		log.Warnf("Event: %s", event.Type)
+		log.Infof("Event: %s", event.Type)
 		switch event.Type {
 		case watch.Added: // add the tunnel
-			log.Warnf("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
+			log.Infof("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(false)
 			break
 		case watch.Modified: // update the tunnel
-			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
+			log.Infof("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Deleted: // remove the tunnel
-			log.Warnf("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
+			log.Infof("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Error:
@@ -533,6 +533,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		return
 	}
 
+	// TODO: is the selector necessary?
 	if selector == "" && svcfwd.Headless {
 		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
 		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)

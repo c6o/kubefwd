@@ -231,7 +231,7 @@ func PortForward(pfo *PortForwardOpts) error {
 		log.Errorf("ForwardPorts error: %s", err.Error())
 		pfo.shutdown()
 		return err
-	} else { // service deleted OR kill SIGTERM
+	} else {
 		pfo.shutdown()
 		//pfo.Stop() // Don't shut down, this gives connected clients time to move to a new pod.
 	}
