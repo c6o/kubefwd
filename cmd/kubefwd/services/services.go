@@ -473,15 +473,15 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 		switch event.Type {
 		case watch.Added: // add the tunnel
 			log.Warnf("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
-			waiter.ServiceFwd.SyncPodForwards(false)
+			go waiter.ServiceFwd.SyncPodForwards(false)
 			break
 		case watch.Modified: // update the tunnel
 			log.Warnf("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
-			waiter.ServiceFwd.SyncPodForwards(true)
+			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Deleted: // remove the tunnel
 			log.Warnf("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
-			waiter.ServiceFwd.SyncPodForwards(true)
+			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Error:
 			log.Errorf("ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)

@@ -349,7 +349,7 @@ func (waiter *PodStateWaiterImpl) ListenUntilPodDeleted(stopChannel <-chan struc
 		switch event.Type {
 		case watch.Deleted:
 			log.Warnf("Pod %s deleted, resyncing the %s service pods.", pod.ObjectMeta.Name, waiter.ServiceFwd)
-			waiter.ServiceFwd.SyncPodForwards(true)
+			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		}
 	}
