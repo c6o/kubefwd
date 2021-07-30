@@ -500,6 +500,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// Check if service has a valid config to do forwarding
 	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
+	headless := selector == "" || svc.Spec.ClusterIP == "None"
 
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
@@ -515,7 +516,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PodLabelSelector:     selector,
 		NamespaceServiceLock: opts.NamespaceIPLock,
 		Svc:                  svc,
-		Headless:             svc.Spec.ClusterIP == "None",
+		Headless:             headless,
 		PortForwards:         make(map[string][]*fwdport.PortForwardOpts),
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
@@ -534,7 +535,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 	}
 
 	// TODO: is the selector necessary?
-	if selector == "" && svcfwd.Headless {
+	if headless {
 		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
 		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
 		fwdsvcregistry.Add(svcfwd, false)
