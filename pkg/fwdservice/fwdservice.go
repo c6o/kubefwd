@@ -2,6 +2,7 @@ package fwdservice
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -164,6 +165,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 		}
 	}
 
+	// TODO: What about pods in other namespaces?
 	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -176,10 +178,39 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 
 	podsEligible := make([]v1.Pod, 0, len(pods.Items))
 
+	found := false
 	for _, pod := range pods.Items {
 		if containsAddress(addresses, pod.Status.PodIP) && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
 			podsEligible = append(podsEligible, pod)
+			found = true
 		}
+	}
+	if (!found) { // no pods for this service
+		log.Errorf("No pod found for %s", svcFwd.Svc.Name)
+		str := fmt.Sprintf(`{
+  "metadata": {
+    "name": "%s",
+    "namespace": "%s",
+    "labels": {
+		"fake" : true,
+	}
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "halyard-headless",
+        "ports": [{ "containerPort": 5432, "protocol": "TCP" }]
+      }
+    ]
+  }
+}`,svcFwd.Svc.Name, svcFwd.Svc.Namespace)
+
+		var pod v1.Pod
+		json.Unmarshal([]byte(str), &pod)
+		podsEligible = append(podsEligible, pod)
+	} else {
+		data, _ := json.Marshal(podsEligible)
+		fmt.Println(string(data))
 	}
 
 	return podsEligible
@@ -367,6 +398,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 					ServiceFwd: svcFwd,
 				},
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
+				Fake: pod.ObjectMeta.Labels["fake"] == "true",
 			}
 			pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
 
