@@ -2,7 +2,6 @@ package fwdservice
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -187,30 +186,36 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 	}
 	if (!found) { // no pods for this service
 		log.Errorf("No pod found for %s", svcFwd.Svc.Name)
-		str := fmt.Sprintf(`{
-  "metadata": {
-    "name": "%s",
-    "namespace": "%s",
-    "labels": {
-		"fake" : true,
-	}
-  },
-  "spec": {
-    "containers": [
-      {
-        "name": "halyard-headless",
-        "ports": [{ "containerPort": 5432, "protocol": "TCP" }]
-      }
-    ]
-  }
-}`,svcFwd.Svc.Name, svcFwd.Svc.Namespace)
 
-		var pod v1.Pod
-		json.Unmarshal([]byte(str), &pod)
-		podsEligible = append(podsEligible, pod)
-	} else {
-		data, _ := json.Marshal(podsEligible)
-		fmt.Println(string(data))
+		pod := &v1.Pod{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Pod",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: svcFwd.Svc.Name,
+				Namespace: svcFwd.Svc.Namespace,
+				Labels: map[string]string{
+					"Fake": "true",
+				},
+
+			},
+			Spec: v1.PodSpec{
+				Containers: []v1.Container{
+					{
+						Name: "halyard-headless-ext",
+						Ports: []v1.ContainerPort{
+							{
+								ContainerPort: 80,
+								Protocol: "TCP",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		podsEligible = append(podsEligible, *pod)
 	}
 
 	return podsEligible
@@ -230,6 +235,26 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 		} else {
 			k8sPods = svcFwd.GetPodsForService()
 		}
+		if (k8sPods != nil) {
+			svcFwd.SyncPodForward(k8sPods, true)
+		}
+	}
+	// When a whole set of pods gets deleted at once, they all will trigger a SyncPodForwards() call.
+	// This would hammer k8s with load needlessly.  We therefore use a debouncer to only update pods
+	// if things have been stable for at least a few seconds.  However, if things never stabilize we
+	// will still reload this information at least once every 5 minutes.
+	if force || time.Since(svcFwd.LastSyncedAt) > 5*time.Minute {
+		// Replace current debounced function with no-op
+		svcFwd.SyncDebouncer(func() {})
+
+		// Do the syncing work
+		sync()
+	} else {
+		// Queue sync
+		svcFwd.SyncDebouncer(sync)
+	}
+}
+func (svcFwd *ServiceFWD) SyncPodForward(k8sPods []v1.Pod, force bool) {
 
 		// If no pods are found currently. Will try again next re-sync period.
 		if len(k8sPods) == 0 {
@@ -294,21 +319,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 				}
 			}
 		}
-	}
-	// When a whole set of pods gets deleted at once, they all will trigger a SyncPodForwards() call.
-	// This would hammer k8s with load needlessly.  We therefore use a debouncer to only update pods
-	// if things have been stable for at least a few seconds.  However, if things never stabilize we
-	// will still reload this information at least once every 5 minutes.
-	if force || time.Since(svcFwd.LastSyncedAt) > 5*time.Minute {
-		// Replace current debounced function with no-op
-		svcFwd.SyncDebouncer(func() {})
 
-		// Do the syncing work
-		sync()
-	} else {
-		// Queue sync
-		svcFwd.SyncDebouncer(sync)
-	}
 }
 
 // LoopPodsToForward starts the port-forwarding for each
@@ -398,7 +409,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 					ServiceFwd: svcFwd,
 				},
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
-				Fake: pod.ObjectMeta.Labels["fake"] == "true",
+				Fake: pod.ObjectMeta.Labels["Fake"] == "true",
 			}
 			pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
 
