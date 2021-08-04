@@ -54,45 +54,45 @@ func (params *HostModifierOpts) AddHosts() {
         }
     }
 
-    //// alternate cluster / first namespace
-    //if params.ClusterN > 0 && params.NamespaceN == 0 {
-    //    params.addHost(fmt.Sprintf(
-    //        "%s.%s",
-    //        params.Service,
-    //        params.Context,
-    //    ))
-    //}
-    //
-    //// namespaced without cluster
-    //if params.ClusterN == 0 {
-    //    params.addHost(fmt.Sprintf(
-    //        "%s.%s",
-    //        params.Service,
-    //        params.Namespace,
-    //    ))
-    //
-    //    params.addHost(fmt.Sprintf(
-    //        "%s.%s.svc",
-    //        params.Service,
-    //        params.Namespace,
-    //    ))
-    //
-    //    params.addHost(fmt.Sprintf(
-    //        "%s.%s.svc.cluster.local",
-    //        params.Service,
-    //        params.Namespace,
-    //    ))
-    //
-    //    if params.Domain != "" {
-    //        params.addHost(fmt.Sprintf(
-    //            "%s.%s.svc.cluster.%s",
-    //            params.Service,
-    //            params.Namespace,
-    //            params.Domain,
-    //        ))
-    //    }
-    //
-    //}
+    // alternate cluster / first namespace
+    if params.ClusterN > 0 && params.NamespaceN == 0 {
+       params.addHost(fmt.Sprintf(
+           "%s.%s",
+           params.Service,
+           params.Context,
+       ))
+    }
+
+    // namespaced without cluster
+    if params.ClusterN == 0 {
+       params.addHost(fmt.Sprintf(
+           "%s.%s",
+           params.Service,
+           params.Namespace,
+       ))
+
+       params.addHost(fmt.Sprintf(
+           "%s.%s.svc",
+           params.Service,
+           params.Namespace,
+       ))
+
+       params.addHost(fmt.Sprintf(
+           "%s.%s.svc.cluster.local",
+           params.Service,
+           params.Namespace,
+       ))
+
+       if params.Domain != "" {
+           params.addHost(fmt.Sprintf(
+               "%s.%s.svc.cluster.%s",
+               params.Service,
+               params.Namespace,
+               params.Domain,
+           ))
+       }
+
+    }
 
     params.addHost(fmt.Sprintf(
        "%s.%s.%s",
@@ -100,20 +100,20 @@ func (params *HostModifierOpts) AddHosts() {
        params.Namespace,
        params.Context,
     ))
-    //
-    //params.addHost(fmt.Sprintf(
-    //    "%s.%s.svc.%s",
-    //    params.Service,
-    //    params.Namespace,
-    //    params.Context,
-    //))
-    //
-    //params.addHost(fmt.Sprintf(
-    //    "%s.%s.svc.cluster.%s",
-    //    params.Service,
-    //    params.Namespace,
-    //    params.Context,
-    //))
+
+    params.addHost(fmt.Sprintf(
+       "%s.%s.svc.%s",
+       params.Service,
+       params.Namespace,
+       params.Context,
+    ))
+
+    params.addHost(fmt.Sprintf(
+       "%s.%s.svc.cluster.%s",
+       params.Service,
+       params.Namespace,
+       params.Context,
+    ))
 
     err := params.HostFile.Hosts.Save()
     if err != nil {
