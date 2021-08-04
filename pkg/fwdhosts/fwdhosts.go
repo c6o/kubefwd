@@ -94,12 +94,12 @@ func (params *HostModifierOpts) AddHosts() {
     //
     //}
 
-    //params.addHost(fmt.Sprintf(
-    //    "%s.%s.%s",
-    //    params.Service,
-    //    params.Namespace,
-    //    params.Context,
-    //))
+    params.addHost(fmt.Sprintf(
+       "%s.%s.%s",
+       params.Service,
+       params.Namespace,
+       params.Context,
+    ))
     //
     //params.addHost(fmt.Sprintf(
     //    "%s.%s.svc.%s",

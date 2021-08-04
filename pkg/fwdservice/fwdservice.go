@@ -148,7 +148,7 @@ func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
 	}
 	go proxyer.Proxyer(localIp.String(), 80, endpoint.Subsets[0].Addresses[0].IP, 80)
 
-	HostModifier := &fwdhosts.HostModifierOpts{
+	HostModifier := fwdhosts.HostModifierOpts{
 		HostFile:   svcFwd.Hostfile,
 		ClusterN:   svcFwd.ClusterN,
 		NamespaceN: svcFwd.NamespaceN,
@@ -212,7 +212,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 		}
 	}
 	if (!found) { // no pods for this service
-		//svcFwd.ProxyToPodlessService(endpoint)
+		svcFwd.ProxyToPodlessService(endpoint)
 		return nil
 	}
 
