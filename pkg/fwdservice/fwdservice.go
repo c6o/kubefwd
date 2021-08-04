@@ -157,6 +157,7 @@ func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
 		Namespace: svcFwd.Svc.Namespace,
 		Context: svcFwd.Context,
 		LocalIp: localIp,
+		//Hosts: []string{},
 	}
 	HostModifier.AddHosts()
 	return nil
@@ -212,6 +213,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 	}
 	if (!found) { // no pods for this service
 		svcFwd.ProxyToPodlessService(endpoint)
+		return nil
 	}
 
 	return podsEligible
@@ -418,6 +420,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				Namespace: pod.Namespace,
 				Context: svcFwd.Context,
 				LocalIp: localIp,
+				//Hosts: []string{},
 			}
 
 			// If port-forwarding on pod under exact port is already configured, then skip it

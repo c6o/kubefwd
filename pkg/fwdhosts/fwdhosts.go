@@ -13,6 +13,7 @@ import (
 // HostFileWithLock
 type HostFileWithLock struct {
     Hosts *txeh.Hosts
+    HostStrings []string
     sync.Mutex
 }
 
@@ -25,11 +26,12 @@ type HostModifierOpts struct {
     Context string
     HostFile *HostFileWithLock
     LocalIp net.IP
-    Hosts []string
+    //Hosts []string
 }
 
 func (params HostModifierOpts) AddHosts() {
 
+    // todo: this check needs to be done outside.
     // We must not add multiple hosts entries for different ports on the same service
     //if operator.Pfo.getBrothersInPodsAmount() != 1 {
     //    return
@@ -123,6 +125,7 @@ func (params HostModifierOpts) AddHosts() {
 
 // RemoveHosts removes hosts /etc/hosts  associated with a forwarded pod
 func (params HostModifierOpts) RemoveHosts() {
+    // todo: this check needs to be done outside.
     // We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
     //if operator.Pfo.getBrothersInPodsAmount() > 0 {
     //    return
@@ -139,8 +142,9 @@ func (params HostModifierOpts) RemoveHosts() {
         return
     }
 
+    log.Debugf("Removing hostfile entries... %v", params.HostFile.HostStrings)
     // remove all hosts
-    for _, host := range params.Hosts {
+    for _, host := range params.HostFile.HostStrings {
         log.Debugf("Removing host %s in namespace %s from context %s", host, params.Namespace, params.Context)
         params.HostFile.Hosts.RemoveHost(host)
     }
@@ -159,10 +163,15 @@ func (params HostModifierOpts) RemoveInterfaceAlias() {
 
 func (params HostModifierOpts) addHost(host string) {
     // add to list of hostnames for this port-forward
-    params.Hosts = append(params.Hosts, host)
+    //params.Hosts = append(params.Hosts, host)
 
+    // todo: check to see if this needs to be called:
+    //  //if operator.Pfo.getBrothersInPodsAmount() > 0 {
+    //    //    return
+    //    //}
     // remove host if it already exists in /etc/hosts
     params.HostFile.Hosts.RemoveHost(host)
+    params.HostFile.HostStrings = append(params.HostFile.HostStrings, host)
 
     // add host to /etc/hosts
     params.HostFile.Hosts.AddHost(params.LocalIp.String(), host)

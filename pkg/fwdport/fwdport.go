@@ -245,7 +245,9 @@ func PortForward(pfo *PortForwardOpts) error {
 // shutdown removes port-forward from ServiceFwd and removes hosts entries if it's necessary
 func (pfo PortForwardOpts) shutdown() {
 	pfo.ServiceFwd.RemoveServicePodByPort(pfo.String(), pfo.PodPort, true)
-	pfo.HostModifier.RemoveHosts()
+	if pfo.getBrothersInPodsAmount() == 0 {
+		pfo.HostModifier.RemoveHosts()
+	}
 	pfo.HostModifier.RemoveInterfaceAlias()
 }
 
