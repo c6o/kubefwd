@@ -159,6 +159,12 @@ func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
 		LocalIp: localIp,
 		Hosts: []string{},
 	}
+	// cleanup on the stopChannel signal
+	go func() {
+		<-svcFwd.DoneChannel
+		HostModifier.RemoveHosts()
+		HostModifier.RemoveInterfaceAlias()
+	}()
 	HostModifier.AddHosts()
 	return nil
 }
