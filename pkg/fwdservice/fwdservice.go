@@ -413,8 +413,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				},
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
 			}
-			//pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
-			//
+
 			pfo.HostModifier = fwdhosts.HostModifierOpts{
 				HostFile:   svcFwd.Hostfile,
 				ClusterN:   svcFwd.ClusterN,

@@ -46,6 +46,7 @@ type PortForwardHelper interface {
 	NewDialer(upgrader spdy.Upgrader, client *http.Client, method string, pfRequest *restclient.Request) httpstream.Dialer
 }
 
+// Todo: fix tests to not use this, use Host Modifier.
 type HostsOperator interface {
 	AddHosts()
 	RemoveHosts()
@@ -54,11 +55,10 @@ type HostsOperator interface {
 
 type PortForwardHelperImpl struct{}
 
+// Todo: fix tests to not use this, use Host Modifier.
 type PortForwardOptsHostsOperator struct {
 	Pfo *PortForwardOpts
 }
-
-
 
 // HostsParams
 type HostsParams struct {
@@ -109,7 +109,6 @@ type PortForwardOpts struct {
 
 	StateWaiter       PodStateWaiter
 	PortForwardHelper PortForwardHelper
-	//HostsOperator     HostsOperator
 	HostModifier fwdhosts.HostModifierOpts
 }
 
