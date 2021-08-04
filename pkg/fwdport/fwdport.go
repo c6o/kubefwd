@@ -8,17 +8,14 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/httpstream"
-
-	"github.com/c6o/kubefwd/pkg/fwdnet"
+	"github.com/c6o/kubefwd/pkg/fwdhosts"
 	"github.com/c6o/kubefwd/pkg/fwdpub"
 	log "github.com/sirupsen/logrus"
-	"github.com/txn2/txeh"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -84,7 +81,7 @@ type PortForwardOpts struct {
 	PodPort    string
 	LocalIp    net.IP
 	LocalPort  string
-	HostFile   *HostFileWithLock
+	HostFile   *fwdhosts.HostFileWithLock
 
 	// Context is a unique key (string) in kubectl config representing
 	// a user/cluster combination. Kubefwd uses context as the
@@ -114,7 +111,7 @@ type PortForwardOpts struct {
 	PortForwardHelper PortForwardHelper
 	//HostsOperator     HostsOperator
 	Fake bool
-	HostModifier HostModifierOpts
+	HostModifier fwdhosts.HostModifierOpts
 }
 
 type pingingDialer struct {
@@ -414,304 +411,4 @@ func (p PortForwardHelperImpl) NewDialer(upgrader spdy.Upgrader, client *http.Cl
 
 func (p PortForwardHelperImpl) ForwardPorts(forwarder *portforward.PortForwarder) error {
 	return forwarder.ForwardPorts()
-}
-
-//// AddHosts adds hostname entries to /etc/hosts
-//func (operator PortForwardOptsHostsOperator) AddHosts() {
-//
-//	// We must not add multiple hosts entries for different ports on the same service
-//	if operator.Pfo.getBrothersInPodsAmount() != 1 {
-//		return
-//	}
-//
-//	operator.Pfo.HostFile.Lock()
-//
-//	// pfo.Service holds only the service name
-//	// start with the smallest allowable hostname
-//
-//	// bare service name
-//	if operator.Pfo.ClusterN == 0 && operator.Pfo.NamespaceN == 0 {
-//		operator.addHost(operator.Pfo.Service)
-//
-//		if operator.Pfo.Domain != "" {
-//			operator.addHost(fmt.Sprintf(
-//				"%s.%s",
-//				operator.Pfo.Service,
-//				operator.Pfo.Domain,
-//			))
-//		}
-//	}
-//
-//	// alternate cluster / first namespace
-//	if operator.Pfo.ClusterN > 0 && operator.Pfo.NamespaceN == 0 {
-//		operator.addHost(fmt.Sprintf(
-//			"%s.%s",
-//			operator.Pfo.Service,
-//			operator.Pfo.Context,
-//		))
-//	}
-//
-//	// namespaced without cluster
-//	if operator.Pfo.ClusterN == 0 {
-//		operator.addHost(fmt.Sprintf(
-//			"%s.%s",
-//			operator.Pfo.Service,
-//			operator.Pfo.Namespace,
-//		))
-//
-//		operator.addHost(fmt.Sprintf(
-//			"%s.%s.svc",
-//			operator.Pfo.Service,
-//			operator.Pfo.Namespace,
-//		))
-//
-//		operator.addHost(fmt.Sprintf(
-//			"%s.%s.svc.cluster.local",
-//			operator.Pfo.Service,
-//			operator.Pfo.Namespace,
-//		))
-//
-//		if operator.Pfo.Domain != "" {
-//			operator.addHost(fmt.Sprintf(
-//				"%s.%s.svc.cluster.%s",
-//				operator.Pfo.Service,
-//				operator.Pfo.Namespace,
-//				operator.Pfo.Domain,
-//			))
-//		}
-//
-//	}
-//
-//	operator.addHost(fmt.Sprintf(
-//		"%s.%s.%s",
-//		operator.Pfo.Service,
-//		operator.Pfo.Namespace,
-//		operator.Pfo.Context,
-//	))
-//
-//	operator.addHost(fmt.Sprintf(
-//		"%s.%s.svc.%s",
-//		operator.Pfo.Service,
-//		operator.Pfo.Namespace,
-//		operator.Pfo.Context,
-//	))
-//
-//	operator.addHost(fmt.Sprintf(
-//		"%s.%s.svc.cluster.%s",
-//		operator.Pfo.Service,
-//		operator.Pfo.Namespace,
-//		operator.Pfo.Context,
-//	))
-//
-//	err := operator.Pfo.HostFile.Hosts.Save()
-//	if err != nil {
-//		log.Error("Error saving hosts file", err)
-//	}
-//	operator.Pfo.HostFile.Unlock()
-//}
-//
-//// RemoveHosts removes hosts /etc/hosts  associated with a forwarded pod
-//func (operator PortForwardOptsHostsOperator) RemoveHosts() {
-//	// We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
-//	if operator.Pfo.getBrothersInPodsAmount() > 0 {
-//		return
-//	}
-//
-//	// we should lock the pfo.HostFile here
-//	// because sometimes other goroutine write the *txeh.Hosts
-//	operator.Pfo.HostFile.Lock()
-//	// other applications or process may have written to /etc/hosts
-//	// since it was originally updated.
-//	err := operator.Pfo.HostFile.Hosts.Reload()
-//	if err != nil {
-//		log.Errorf("Unable to reload /etc/hosts: %s", err.Error())
-//		return
-//	}
-//
-//	// remove all hosts
-//	for _, host := range operator.Pfo.Hosts {
-//		log.Debugf("Removing host %s for pod %s in namespace %s from context %s", host, operator.Pfo.PodName, operator.Pfo.Namespace, operator.Pfo.Context)
-//		operator.Pfo.HostFile.Hosts.RemoveHost(host)
-//	}
-//
-//	// fmt.Printf("Delete Host And Save !\r\n")
-//	err = operator.Pfo.HostFile.Hosts.Save()
-//	if err != nil {
-//		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
-//	}
-//	operator.Pfo.HostFile.Unlock()
-//}
-//
-//func (operator PortForwardOptsHostsOperator) RemoveInterfaceAlias() {
-//	fwdnet.RemoveInterfaceAlias(operator.Pfo.LocalIp)
-//}
-//
-//func (operator PortForwardOptsHostsOperator) addHost(host string) {
-//	// add to list of hostnames for this port-forward
-//	operator.Pfo.Hosts = append(operator.Pfo.Hosts, host)
-//
-//	// remove host if it already exists in /etc/hosts
-//	operator.Pfo.HostFile.Hosts.RemoveHost(host)
-//
-//	// add host to /etc/hosts
-//	operator.Pfo.HostFile.Hosts.AddHost(operator.Pfo.LocalIp.String(), host)
-//}
-//#####################
-
-// HostFileWithLock
-type HostFileWithLock struct {
-	Hosts *txeh.Hosts
-	sync.Mutex
-}
-
-type HostModifierOpts struct {
-	NamespaceN int
-	ClusterN int
-	Service string
-	Domain string
-	Namespace string
-	Context string
-	HostFile *HostFileWithLock
-	LocalIp net.IP
-	Hosts []string
-}
-
-func (params HostModifierOpts) AddHosts() {
-
-	// We must not add multiple hosts entries for different ports on the same service
-	//if operator.Pfo.getBrothersInPodsAmount() != 1 {
-	//    return
-	//}
-
-	params.HostFile.Lock()
-	// pfo.Service holds only the service name
-	// start with the smallest allowable hostname
-
-	// bare service name
-	if params.ClusterN == 0 && params.NamespaceN == 0 {
-		params.addHost(params.Service)
-
-		if params.Domain != "" {
-			params.addHost(fmt.Sprintf(
-				"%s.%s",
-				params.Service,
-				params.Domain,
-			))
-		}
-	}
-
-	// alternate cluster / first namespace
-	if params.ClusterN > 0 && params.NamespaceN == 0 {
-		params.addHost(fmt.Sprintf(
-			"%s.%s",
-			params.Service,
-			params.Context,
-		))
-	}
-
-	// namespaced without cluster
-	if params.ClusterN == 0 {
-		params.addHost(fmt.Sprintf(
-			"%s.%s",
-			params.Service,
-			params.Namespace,
-		))
-
-		params.addHost(fmt.Sprintf(
-			"%s.%s.svc",
-			params.Service,
-			params.Namespace,
-		))
-
-		params.addHost(fmt.Sprintf(
-			"%s.%s.svc.cluster.local",
-			params.Service,
-			params.Namespace,
-		))
-
-		if params.Domain != "" {
-			params.addHost(fmt.Sprintf(
-				"%s.%s.svc.cluster.%s",
-				params.Service,
-				params.Namespace,
-				params.Domain,
-			))
-		}
-
-	}
-
-	params.addHost(fmt.Sprintf(
-		"%s.%s.%s",
-		params.Service,
-		params.Namespace,
-		params.Context,
-	))
-
-	params.addHost(fmt.Sprintf(
-		"%s.%s.svc.%s",
-		params.Service,
-		params.Namespace,
-		params.Context,
-	))
-
-	params.addHost(fmt.Sprintf(
-		"%s.%s.svc.cluster.%s",
-		params.Service,
-		params.Namespace,
-		params.Context,
-	))
-
-	err := params.HostFile.Hosts.Save()
-	if err != nil {
-		log.Error("Error saving hosts file", err)
-	}
-	params.HostFile.Unlock()
-
-}
-
-// RemoveHosts removes hosts /etc/hosts  associated with a forwarded pod
-func (params HostModifierOpts) RemoveHosts() {
-	// We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
-	//if operator.Pfo.getBrothersInPodsAmount() > 0 {
-	//    return
-	//}
-
-	// we should lock the pfo.HostFile here
-	// because sometimes other goroutine write the *txeh.Hosts
-	params.HostFile.Lock()
-	// other applications or process may have written to /etc/hosts
-	// since it was originally updated.
-	err := params.HostFile.Hosts.Reload()
-	if err != nil {
-		log.Errorf("Unable to reload /etc/hosts: %s", err.Error())
-		return
-	}
-
-	// remove all hosts
-	for _, host := range params.Hosts {
-		log.Debugf("Removing host %s in namespace %s from context %s", host, params.Namespace, params.Context)
-		params.HostFile.Hosts.RemoveHost(host)
-	}
-
-	// fmt.Printf("Delete Host And Save !\r\n")
-	err = params.HostFile.Hosts.Save()
-	if err != nil {
-		log.Errorf("Error saving /etc/hosts: %s\n", err.Error())
-	}
-	params.HostFile.Unlock()
-}
-
-func (params HostModifierOpts) RemoveInterfaceAlias() {
-	fwdnet.RemoveInterfaceAlias(params.LocalIp)
-}
-
-func (params HostModifierOpts) addHost(host string) {
-	// add to list of hostnames for this port-forward
-	params.Hosts = append(params.Hosts, host)
-
-	// remove host if it already exists in /etc/hosts
-	params.HostFile.Hosts.RemoveHost(host)
-
-	// add host to /etc/hosts
-	params.HostFile.Hosts.AddHost(params.LocalIp.String(), host)
 }

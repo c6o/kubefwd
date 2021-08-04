@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/c6o/kubefwd/cmd/kubefwd/proxyer"
+	"github.com/c6o/kubefwd/pkg/fwdhosts"
 	"net"
 	"strconv"
 	"sync"
@@ -26,7 +27,7 @@ import (
 type ServiceFWD struct {
 	ClientSet    kubernetes.Clientset
 	ListOptions  metav1.ListOptions
-	Hostfile     *fwdport.HostFileWithLock
+	Hostfile     *fwdhosts.HostFileWithLock
 	ClientConfig restclient.Config
 	RESTClient   restclient.RESTClient
 
@@ -147,7 +148,7 @@ func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
 	}
 	go proxyer.Proxyer(localIp.String(), 80, endpoint.Subsets[0].Addresses[0].IP, 80)
 
-	HostModifier := &fwdport.HostModifierOpts{
+	HostModifier := &fwdhosts.HostModifierOpts{
 		HostFile:   svcFwd.Hostfile,
 		ClusterN:   svcFwd.ClusterN,
 		NamespaceN: svcFwd.NamespaceN,
@@ -408,7 +409,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			}
 			//pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
 			//
-			pfo.HostModifier = fwdport.HostModifierOpts{
+			pfo.HostModifier = fwdhosts.HostModifierOpts{
 				HostFile:   svcFwd.Hostfile,
 				ClusterN:   svcFwd.ClusterN,
 				NamespaceN: svcFwd.NamespaceN,

@@ -1,5 +1,5 @@
 //go:generate ${gopath}/bin/mockgen -source=fwdport.go -destination=mock_fwdport.go -package=fwdport
-package fwdport
+package fwdhosts
 
 import (
     "fmt"

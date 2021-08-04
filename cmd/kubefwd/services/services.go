@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/c6o/kubefwd/pkg/fwdhosts"
 	"net/http"
 	"os"
 	"os/signal"
@@ -301,7 +302,7 @@ Try:
 				// each cluster and namespace has its own ip range
 				NamespaceIPLock:   &sync.Mutex{},
 				ListOptions:       listOptions,
-				HostFile:          &fwdport.HostFileWithLock{Hosts: hostFile},
+				HostFile:          &fwdhosts.HostFileWithLock{Hosts: hostFile},
 				ClientConfig:      *restConfig,
 				RESTClient:        *restClient,
 				ClusterN:          i,
@@ -345,7 +346,7 @@ Try:
 type NamespaceOpts struct {
 	NamespaceIPLock *sync.Mutex
 	ListOptions     metav1.ListOptions
-	HostFile        *fwdport.HostFileWithLock
+	HostFile        *fwdhosts.HostFileWithLock
 
 	ClientSet    kubernetes.Clientset
 	ClientConfig restclient.Config
