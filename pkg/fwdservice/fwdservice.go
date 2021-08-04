@@ -146,7 +146,11 @@ func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
 		log.Errorf("ERROR: error readying interface for podless headless service: %s\n", err)
 		return err
 	}
-	go proxyer.Proxyer(localIp.String(), 80, endpoint.Subsets[0].Addresses[0].IP, 80)
+	go proxyer.Proxyer(
+		localIp.String(),
+		endpoint.Subsets[0].Ports[0].Port,
+		endpoint.Subsets[0].Addresses[0].IP,
+		endpoint.Subsets[0].Ports[0].Port)
 
 	HostModifier := fwdhosts.HostModifierOpts{
 		HostFile:   svcFwd.Hostfile,

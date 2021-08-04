@@ -5,7 +5,7 @@ import (
     "net"
 )
 
-func Proxyer(localIp string, localPort int, remoteIp string, remotePort int) {
+func Proxyer(localIp string, localPort int32, remoteIp string, remotePort int32) {
     listenAddress := fmt.Sprintf("%s:%d", localIp, localPort)
     remoteAddress := fmt.Sprintf("%s:%d", remoteIp, remotePort)
     ln, err := net.Listen("tcp", listenAddress)
