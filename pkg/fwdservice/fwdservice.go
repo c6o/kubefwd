@@ -3,12 +3,13 @@ package fwdservice
 import (
 	"context"
 	"fmt"
-	"github.com/c6o/kubefwd/cmd/kubefwd/proxyer"
-	"github.com/c6o/kubefwd/pkg/fwdhosts"
 	"net"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/c6o/kubefwd/cmd/kubefwd/proxyer"
+	"github.com/c6o/kubefwd/pkg/fwdhosts"
 
 	"github.com/c6o/kubefwd/pkg/fwdnet"
 	"github.com/c6o/kubefwd/pkg/fwdport"
@@ -146,28 +147,43 @@ func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
 		log.Errorf("ERROR: error readying interface for podless headless service: %s\n", err)
 		return err
 	}
-	go proxyer.Proxyer(
-		localIp.String(),
-		endpoint.Subsets[0].Ports[0].Port,
-		endpoint.Subsets[0].Addresses[0].IP,
-		endpoint.Subsets[0].Ports[0].Port)
+
+	// iterate through all possible service ports
+	var servicePorts []int32
+	for _, port := range svcFwd.Svc.Spec.Ports {
+		servicePorts = append(servicePorts, port.TargetPort.IntVal)
+	}
+
+	// now capture the addresses of subsets with matching ports
+	for _, subset := range endpoint.Subsets {
+		for _, port := range subset.Ports {
+			if containsPort(servicePorts, port.Port) {
+				go proxyer.Proxyer(
+					localIp.String(),
+					port.Port,
+					subset.Addresses[0].IP, // assume that if there are multiple endpoint remote IPs then the first one is acceptable
+					port.Port)
+			}
+		}
+	}
 
 	HostModifier := fwdhosts.HostModifierOpts{
 		HostFile:   svcFwd.Hostfile,
 		ClusterN:   svcFwd.ClusterN,
 		NamespaceN: svcFwd.NamespaceN,
 		Domain:     svcFwd.Domain,
-		Service: svcFwd.Svc.Name,
-		Namespace: svcFwd.Svc.Namespace,
-		Context: svcFwd.Context,
-		LocalIp: localIp,
-		Hosts: []string{},
+		Service:    svcFwd.Svc.Name,
+		Namespace:  svcFwd.Svc.Namespace,
+		Context:    svcFwd.Context,
+		LocalIp:    localIp,
+		Hosts:      []string{},
 	}
 	// cleanup on the stopChannel signal
 	go func() {
 		<-svcFwd.DoneChannel
 		HostModifier.RemoveHosts()
 		HostModifier.RemoveInterfaceAlias()
+		// TODO: signal close?
 	}()
 	HostModifier.AddHosts()
 	return nil
@@ -246,7 +262,7 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 
 		if k8sPods == nil {
 			return
-		}// if k8sPods is nil, this is a pod-less service.
+		} // if k8sPods is nil, this is a pod-less service.
 		// If no pods are found currently. Will try again next re-sync period.
 		if len(k8sPods) == 0 {
 			log.Warnf("No Running Pods returned for service %s", svcFwd)
@@ -419,11 +435,11 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				ClusterN:   svcFwd.ClusterN,
 				NamespaceN: svcFwd.NamespaceN,
 				Domain:     svcFwd.Domain,
-				Service: svcName,
-				Namespace: pod.Namespace,
-				Context: svcFwd.Context,
-				LocalIp: localIp,
-				Hosts: []string{},
+				Service:    svcName,
+				Namespace:  pod.Namespace,
+				Context:    svcFwd.Context,
+				LocalIp:    localIp,
+				Hosts:      []string{},
 			}
 
 			// If port-forwarding on pod under exact port is already configured, then skip it
