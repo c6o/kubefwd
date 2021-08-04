@@ -13,7 +13,7 @@ import (
 // HostFileWithLock
 type HostFileWithLock struct {
     Hosts *txeh.Hosts
-    HostStrings []string
+    //HostStrings []string
     sync.Mutex
 }
 
@@ -26,10 +26,10 @@ type HostModifierOpts struct {
     Context string
     HostFile *HostFileWithLock
     LocalIp net.IP
-    //Hosts []string
+    Hosts []string
 }
 
-func (params HostModifierOpts) AddHosts() {
+func (params *HostModifierOpts) AddHosts() {
 
     // todo: this check needs to be done outside.
     // We must not add multiple hosts entries for different ports on the same service
@@ -54,77 +54,76 @@ func (params HostModifierOpts) AddHosts() {
         }
     }
 
-    // alternate cluster / first namespace
-    if params.ClusterN > 0 && params.NamespaceN == 0 {
-        params.addHost(fmt.Sprintf(
-            "%s.%s",
-            params.Service,
-            params.Context,
-        ))
-    }
+    //// alternate cluster / first namespace
+    //if params.ClusterN > 0 && params.NamespaceN == 0 {
+    //    params.addHost(fmt.Sprintf(
+    //        "%s.%s",
+    //        params.Service,
+    //        params.Context,
+    //    ))
+    //}
+    //
+    //// namespaced without cluster
+    //if params.ClusterN == 0 {
+    //    params.addHost(fmt.Sprintf(
+    //        "%s.%s",
+    //        params.Service,
+    //        params.Namespace,
+    //    ))
+    //
+    //    params.addHost(fmt.Sprintf(
+    //        "%s.%s.svc",
+    //        params.Service,
+    //        params.Namespace,
+    //    ))
+    //
+    //    params.addHost(fmt.Sprintf(
+    //        "%s.%s.svc.cluster.local",
+    //        params.Service,
+    //        params.Namespace,
+    //    ))
+    //
+    //    if params.Domain != "" {
+    //        params.addHost(fmt.Sprintf(
+    //            "%s.%s.svc.cluster.%s",
+    //            params.Service,
+    //            params.Namespace,
+    //            params.Domain,
+    //        ))
+    //    }
+    //
+    //}
 
-    // namespaced without cluster
-    if params.ClusterN == 0 {
-        params.addHost(fmt.Sprintf(
-            "%s.%s",
-            params.Service,
-            params.Namespace,
-        ))
-
-        params.addHost(fmt.Sprintf(
-            "%s.%s.svc",
-            params.Service,
-            params.Namespace,
-        ))
-
-        params.addHost(fmt.Sprintf(
-            "%s.%s.svc.cluster.local",
-            params.Service,
-            params.Namespace,
-        ))
-
-        if params.Domain != "" {
-            params.addHost(fmt.Sprintf(
-                "%s.%s.svc.cluster.%s",
-                params.Service,
-                params.Namespace,
-                params.Domain,
-            ))
-        }
-
-    }
-
-    params.addHost(fmt.Sprintf(
-        "%s.%s.%s",
-        params.Service,
-        params.Namespace,
-        params.Context,
-    ))
-
-    params.addHost(fmt.Sprintf(
-        "%s.%s.svc.%s",
-        params.Service,
-        params.Namespace,
-        params.Context,
-    ))
-
-    params.addHost(fmt.Sprintf(
-        "%s.%s.svc.cluster.%s",
-        params.Service,
-        params.Namespace,
-        params.Context,
-    ))
+    //params.addHost(fmt.Sprintf(
+    //    "%s.%s.%s",
+    //    params.Service,
+    //    params.Namespace,
+    //    params.Context,
+    //))
+    //
+    //params.addHost(fmt.Sprintf(
+    //    "%s.%s.svc.%s",
+    //    params.Service,
+    //    params.Namespace,
+    //    params.Context,
+    //))
+    //
+    //params.addHost(fmt.Sprintf(
+    //    "%s.%s.svc.cluster.%s",
+    //    params.Service,
+    //    params.Namespace,
+    //    params.Context,
+    //))
 
     err := params.HostFile.Hosts.Save()
     if err != nil {
         log.Error("Error saving hosts file", err)
     }
     params.HostFile.Unlock()
-
 }
 
 // RemoveHosts removes hosts /etc/hosts  associated with a forwarded pod
-func (params HostModifierOpts) RemoveHosts() {
+func (params *HostModifierOpts) RemoveHosts() {
     // todo: this check needs to be done outside.
     // We must not remove hosts entries if port-forwarding on one of the service ports is cancelled and others not
     //if operator.Pfo.getBrothersInPodsAmount() > 0 {
@@ -142,9 +141,9 @@ func (params HostModifierOpts) RemoveHosts() {
         return
     }
 
-    log.Debugf("Removing hostfile entries... %v", params.HostFile.HostStrings)
+    log.Debugf("Removing hostfile entries... %v", params.Hosts)
     // remove all hosts
-    for _, host := range params.HostFile.HostStrings {
+    for _, host := range params.Hosts {
         log.Debugf("Removing host %s in namespace %s from context %s", host, params.Namespace, params.Context)
         params.HostFile.Hosts.RemoveHost(host)
     }
@@ -157,13 +156,13 @@ func (params HostModifierOpts) RemoveHosts() {
     params.HostFile.Unlock()
 }
 
-func (params HostModifierOpts) RemoveInterfaceAlias() {
+func (params *HostModifierOpts) RemoveInterfaceAlias() {
     fwdnet.RemoveInterfaceAlias(params.LocalIp)
 }
 
-func (params HostModifierOpts) addHost(host string) {
+func (params *HostModifierOpts) addHost(host string) {
     // add to list of hostnames for this port-forward
-    //params.Hosts = append(params.Hosts, host)
+    params.Hosts = append(params.Hosts, host)
 
     // todo: check to see if this needs to be called:
     //  //if operator.Pfo.getBrothersInPodsAmount() > 0 {
@@ -171,7 +170,7 @@ func (params HostModifierOpts) addHost(host string) {
     //    //}
     // remove host if it already exists in /etc/hosts
     params.HostFile.Hosts.RemoveHost(host)
-    params.HostFile.HostStrings = append(params.HostFile.HostStrings, host)
+    //params.HostFile.HostStrings = append(params.HostFile.HostStrings, host)
 
     // add host to /etc/hosts
     params.HostFile.Hosts.AddHost(params.LocalIp.String(), host)
