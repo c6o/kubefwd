@@ -110,7 +110,6 @@ type PortForwardOpts struct {
 	StateWaiter       PodStateWaiter
 	PortForwardHelper PortForwardHelper
 	//HostsOperator     HostsOperator
-	Fake bool
 	HostModifier fwdhosts.HostModifierOpts
 }
 
@@ -184,27 +183,22 @@ func PortForward(pfo *PortForwardOpts) error {
 		close(pfStopChannel)
 	}()
 
-	if (pfo.Fake) {
+	// Waiting until the pod is running
+	pod, err := pfo.StateWaiter.WaitUntilPodRunning(downstreamStopChannel)
+	if err != nil {
+		pfo.stopAndShutdown()
+		return err
+	} else if pod == nil {
+		// if err is not nil but pod is nil
+		// mean service deleted but pod is not runnning.
+		// No error, just return
+		pfo.stopAndShutdown()
 		return nil
 	}
-	// Waiting until the pod is running
-	if (!pfo.Fake) {
-		pod, err := pfo.StateWaiter.WaitUntilPodRunning(downstreamStopChannel)
-		if err != nil {
-			pfo.stopAndShutdown()
-			return err
-		} else if pod == nil {
-			// if err is not nil but pod is nil
-			// mean service deleted but pod is not runnning.
-			// No error, just return
-			pfo.stopAndShutdown()
-			return nil
-		}
 
+	// Listen for pod is deleted
+	go pfo.StateWaiter.ListenUntilPodDeleted(podRestartStopChannel, pod)
 
-		// Listen for pod is deleted
-		go pfo.StateWaiter.ListenUntilPodDeleted(podRestartStopChannel, pod)
-	}
 	p := pfo.Out.MakeProducer(localNamedEndPoint)
 
 	dialer := pfo.PortForwardHelper.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req)

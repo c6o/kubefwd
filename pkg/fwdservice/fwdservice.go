@@ -412,7 +412,6 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 					ServiceFwd: svcFwd,
 				},
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
-				Fake: pod.ObjectMeta.Labels["Fake"] == "true",
 			}
 			//pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
 			//
