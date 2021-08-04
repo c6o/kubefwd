@@ -3,29 +3,32 @@ package proxyer
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func Proxyer(localIp string, localPort int32, remoteIp string, remotePort int32) {
-	listenAddress := fmt.Sprintf("%s:%d", localIp, localPort)
+	localAddress := fmt.Sprintf("%s:%d", localIp, localPort)
 	remoteAddress := fmt.Sprintf("%s:%d", remoteIp, remotePort)
-	listener, err := net.Listen("tcp", listenAddress)
+	listener, err := net.Listen("tcp", localAddress)
 	if err != nil {
-		panic(err)
+		log.Errorf("Proxyer: Proxy conflict: ", err)
+		return
 	}
 
 	for {
 		local, err := listener.Accept()
 		if err != nil {
-			log.Println("error accepting connection", err)
+			log.Warnf("Proxyer: Error accepting connection: ", err)
 			continue
 		}
 
 		go func() {
 			remote, err := net.Dial("tcp", remoteAddress)
 			if err != nil {
-				log.Println("error dialing remote addr", err)
+				log.Warnf("Proxyer: Error dialling remote address: ", err)
+				local.Close()
 				return
 			}
 			go io.Copy(remote, local)
