@@ -40,7 +40,7 @@ func TestPortForward_RemovesItselfFromServiceFwd_AfterPortForwardErr(t *testing.
 		DoneChan:          make(chan struct{}),
 		StateWaiter:       waiter,
 		PortForwardHelper: pfHelper,
-		HostsOperator:     hostsOperator,
+		//HostsOperator:     hostsOperator,
 	}
 	pfErr := errors.New("pf error")
 
@@ -95,7 +95,7 @@ func TestPortForward_OnlyClosesDownstreamChannels_WhenErrorOnWaitUntilPodRunning
 		DoneChan:          make(chan struct{}),
 		StateWaiter:       waiter,
 		PortForwardHelper: pfHelper,
-		HostsOperator:     hostsOperator,
+		//HostsOperator:     hostsOperator,
 	}
 
 	untilPodRunningErr := errors.New("for example, bad credentials error from clientset")

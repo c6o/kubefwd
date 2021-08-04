@@ -469,7 +469,6 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 			log.Errorf("ENDPOINT: Couldn't receive message")
 			return
 		}
-		log.Infof("Event: %s", event.Type)
 		switch event.Type {
 		case watch.Added: // add the tunnel
 			log.Infof("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)

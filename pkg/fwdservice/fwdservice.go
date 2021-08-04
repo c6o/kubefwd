@@ -3,6 +3,7 @@ package fwdservice
 import (
 	"context"
 	"fmt"
+	"github.com/c6o/kubefwd/cmd/kubefwd/proxyer"
 	"net"
 	"strconv"
 	"sync"
@@ -136,6 +137,30 @@ func containsAddress(addresses []v1.EndpointAddress, address string) bool {
 	return false
 }
 
+func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
+	log.Errorf("No pod found for %s", svcFwd.Svc.Name)
+	// setup local port forward to the endpoint.
+	localIp, err := fwdnet.ReadyInterface(svcFwd.Svc.Name, endpoint.Name, svcFwd.ClusterN, svcFwd.NamespaceN, "")
+	if err != nil {
+		log.Errorf("ERROR: error readying interface for podless headless service: %s\n", err)
+		return err
+	}
+	go proxyer.Proxyer(localIp.String(), 80, endpoint.Subsets[0].Addresses[0].IP, 80)
+
+	HostModifier := &fwdport.HostModifierOpts{
+		HostFile:   svcFwd.Hostfile,
+		ClusterN:   svcFwd.ClusterN,
+		NamespaceN: svcFwd.NamespaceN,
+		Domain:     svcFwd.Domain,
+		Service: svcFwd.Svc.Name,
+		Namespace: svcFwd.Svc.Namespace,
+		Context: svcFwd.Context,
+		LocalIp: localIp,
+	}
+	HostModifier.AddHosts()
+	return nil
+}
+
 func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 	endpoint, err := svcFwd.ClientSet.CoreV1().Endpoints(svcFwd.Svc.Namespace).Get(context.TODO(), svcFwd.Svc.Name, metav1.GetOptions{})
 	if err != nil {
@@ -185,37 +210,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 		}
 	}
 	if (!found) { // no pods for this service
-		log.Errorf("No pod found for %s", svcFwd.Svc.Name)
-
-		pod := &v1.Pod{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "Pod",
-				APIVersion: "v1",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name: svcFwd.Svc.Name,
-				Namespace: svcFwd.Svc.Namespace,
-				Labels: map[string]string{
-					"Fake": "true",
-				},
-
-			},
-			Spec: v1.PodSpec{
-				Containers: []v1.Container{
-					{
-						Name: "halyard-headless-ext",
-						Ports: []v1.ContainerPort{
-							{
-								ContainerPort: 80,
-								Protocol: "TCP",
-							},
-						},
-					},
-				},
-			},
-		}
-
-		podsEligible = append(podsEligible, *pod)
+		svcFwd.ProxyToPodlessService(endpoint)
 	}
 
 	return podsEligible
@@ -411,7 +406,18 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
 				Fake: pod.ObjectMeta.Labels["Fake"] == "true",
 			}
-			pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
+			//pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
+			//
+			pfo.HostModifier = fwdport.HostModifierOpts{
+				HostFile:   svcFwd.Hostfile,
+				ClusterN:   svcFwd.ClusterN,
+				NamespaceN: svcFwd.NamespaceN,
+				Domain:     svcFwd.Domain,
+				Service: svcName,
+				Namespace: pod.Namespace,
+				Context: svcFwd.Context,
+				LocalIp: localIp,
+			}
 
 			// If port-forwarding on pod under exact port is already configured, then skip it
 			if runningPortForwards := svcFwd.GetServicePodPortForwards(pfo.Service); len(runningPortForwards) > 0 && svcFwd.contains(runningPortForwards, pfo) {
@@ -441,6 +447,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			)
 
 			pfo.LocalIp = localIp
+			pfo.HostModifier.LocalIp = localIp
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
