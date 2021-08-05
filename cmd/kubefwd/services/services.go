@@ -463,7 +463,7 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 		<-stopChannel
 		watcher.Stop()
 	}()
-	log.Infof("Watching endpoint %s", service.ObjectMeta.Name)
+	//log.Infof("Watching endpoint %s", service.ObjectMeta.Name)
 
 	// watcher until the endpoint is deleted, then trigger a syncpodforwards
 	for {
