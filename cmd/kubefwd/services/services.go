@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/c6o/kubefwd/pkg/fwdhosts"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,6 +26,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/c6o/kubefwd/pkg/fwdhosts"
 
 	"github.com/bep/debounce"
 	"github.com/c6o/kubefwd/pkg/fwdcfg"
@@ -463,11 +464,11 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 		watcher.Stop()
 	}()
 
-	// watcher until the pod is deleted, then trigger a syncpodforwards
+	// watcher until the endpoint is deleted, then trigger a syncpodforwards
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
-			log.Errorf("ENDPOINT: Couldn't receive message")
+			log.Infof("ENDPOINT: Shutting down or watcher channel not okay")
 			return
 		}
 		switch event.Type {

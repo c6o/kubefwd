@@ -140,7 +140,7 @@ func containsAddress(addresses []v1.EndpointAddress, address string) bool {
 }
 
 func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
-	log.Errorf("No pod found for %s", svcFwd.Svc.Name)
+	log.Warnf("No pod found for %s", svcFwd.Svc.Name)
 	// setup local port forward to the endpoint.
 	localIp, err := fwdnet.ReadyInterface(svcFwd.Svc.Name, endpoint.Name, svcFwd.ClusterN, svcFwd.NamespaceN, "")
 	if err != nil {
