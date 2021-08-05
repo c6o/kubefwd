@@ -463,25 +463,26 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 		<-stopChannel
 		watcher.Stop()
 	}()
+	log.Infof("Watching endpoint %s", service.ObjectMeta.Name)
 
 	// watcher until the endpoint is deleted, then trigger a syncpodforwards
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
-			log.Infof("ENDPOINT: Shutting down or watcher channel not okay")
+			//log.Infof("Shutting down endpoint watcher %s", service.ObjectMeta.Name)
 			return
 		}
 		switch event.Type {
 		case watch.Added: // add the tunnel
-			log.Infof("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
+			log.Infof("Endpoint %s added. ", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(false)
 			break
 		case watch.Modified: // update the tunnel
-			log.Infof("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
+			log.Infof("Endpoint %s modified.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Deleted: // remove the tunnel
-			log.Infof("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
+			log.Infof("Endpoint %s deleted.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Error:
@@ -537,7 +538,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// TODO: is the selector necessary?
 	if headless {
-		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
+		log.Warnf("Headless service found: %s.%s\n", svc.Name, svc.Namespace)
 		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
 		fwdsvcregistry.Add(svcfwd, false)
 	} else {
