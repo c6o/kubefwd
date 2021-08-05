@@ -27,6 +27,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/c6o/kubefwd/pkg/fwdhosts"
+
 	"github.com/bep/debounce"
 	"github.com/c6o/kubefwd/pkg/fwdcfg"
 	"github.com/c6o/kubefwd/pkg/fwdhost"
@@ -301,7 +303,7 @@ Try:
 				// each cluster and namespace has its own ip range
 				NamespaceIPLock:   &sync.Mutex{},
 				ListOptions:       listOptions,
-				HostFile:          &fwdport.HostFileWithLock{Hosts: hostFile},
+				HostFile:          &fwdhosts.HostFileWithLock{Hosts: hostFile},
 				ClientConfig:      *restConfig,
 				RESTClient:        *restClient,
 				ClusterN:          i,
@@ -345,7 +347,7 @@ Try:
 type NamespaceOpts struct {
 	NamespaceIPLock *sync.Mutex
 	ListOptions     metav1.ListOptions
-	HostFile        *fwdport.HostFileWithLock
+	HostFile        *fwdhosts.HostFileWithLock
 
 	ClientSet    kubernetes.Clientset
 	ClientConfig restclient.Config
@@ -461,30 +463,30 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 		<-stopChannel
 		watcher.Stop()
 	}()
+	//log.Infof("Watching endpoint %s", service.ObjectMeta.Name)
 
-	// watcher until the pod is deleted, then trigger a syncpodforwards
+	// watcher until the endpoint is deleted, then trigger a syncpodforwards
 	for {
 		event, ok := <-watcher.ResultChan()
 		if !ok {
-			log.Errorf("ENDPOINT: Couldn't receive message")
+			//log.Infof("Shutting down endpoint watcher %s", service.ObjectMeta.Name)
 			return
 		}
-		log.Infof("Event: %s", event.Type)
 		switch event.Type {
 		case watch.Added: // add the tunnel
-			log.Infof("ADDED ENDPOINT: Service %s, Endpoint added. ", service.ObjectMeta.Name)
+			log.Infof("Endpoint for headless service %s added. ", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(false)
 			break
 		case watch.Modified: // update the tunnel
-			log.Infof("MODIFIED ENDPOINT: Service %s, Endpoint modified.", service.ObjectMeta.Name)
+			log.Infof("Endpoint for headless service %s modified.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Deleted: // remove the tunnel
-			log.Infof("DELETED ENDPOINT: Service %s, Endpoint deleted.", service.ObjectMeta.Name)
+			log.Infof("Endpoint for headless service %s deleted.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Error:
-			log.Errorf("ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
+			log.Errorf("Endpoint for headless service %s has error.", service.ObjectMeta.Name)
 			break
 		}
 	}
@@ -500,6 +502,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// Check if service has a valid config to do forwarding
 	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
+	headless := selector == "" || svc.Spec.ClusterIP == "None"
 
 	// Define a service to forward
 	svcfwd := &fwdservice.ServiceFWD{
@@ -515,7 +518,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 		PodLabelSelector:     selector,
 		NamespaceServiceLock: opts.NamespaceIPLock,
 		Svc:                  svc,
-		Headless:             svc.Spec.ClusterIP == "None",
+		Headless:             headless,
 		PortForwards:         make(map[string][]*fwdport.PortForwardOpts),
 		SyncDebouncer:        debounce.New(5 * time.Second),
 		DoneChannel:          make(chan struct{}),
@@ -534,8 +537,8 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 	}
 
 	// TODO: is the selector necessary?
-	if selector == "" && svcfwd.Headless {
-		log.Warnf("No Pod selector for service %s.%s, skipping\n", svc.Name, svc.Namespace)
+	if headless {
+		//log.Warnf("Headless service found: %s.%s\n", svc.Name, svc.Namespace)
 		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
 		fwdsvcregistry.Add(svcfwd, false)
 	} else {

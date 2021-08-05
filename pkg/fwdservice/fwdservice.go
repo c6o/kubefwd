@@ -8,6 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/c6o/kubefwd/cmd/kubefwd/proxyer"
+	"github.com/c6o/kubefwd/pkg/fwdhosts"
+
 	"github.com/c6o/kubefwd/pkg/fwdnet"
 	"github.com/c6o/kubefwd/pkg/fwdport"
 	"github.com/c6o/kubefwd/pkg/fwdpub"
@@ -25,7 +28,7 @@ import (
 type ServiceFWD struct {
 	ClientSet    kubernetes.Clientset
 	ListOptions  metav1.ListOptions
-	Hostfile     *fwdport.HostFileWithLock
+	Hostfile     *fwdhosts.HostFileWithLock
 	ClientConfig restclient.Config
 	RESTClient   restclient.RESTClient
 
@@ -136,6 +139,56 @@ func containsAddress(addresses []v1.EndpointAddress, address string) bool {
 	return false
 }
 
+func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
+	// setup local port forward to the endpoint.
+	localIp, err := fwdnet.ReadyInterface(svcFwd.Svc.Name, endpoint.Name, svcFwd.ClusterN, svcFwd.NamespaceN, "")
+	if err != nil {
+		log.Errorf("ERROR: error readying interface for podless headless service: %s\n", err)
+		return err
+	}
+
+	// iterate through all possible service ports
+	var servicePorts []int32
+	for _, port := range svcFwd.Svc.Spec.Ports {
+		servicePorts = append(servicePorts, port.TargetPort.IntVal)
+	}
+
+	// now capture the addresses of subsets with matching ports
+	for _, subset := range endpoint.Subsets {
+		for _, port := range subset.Ports {
+			if containsPort(servicePorts, port.Port) {
+				log.Printf("Endpoint-Proxy: from %s:%d to %s:%d for podless endpoint %s", localIp.String(), port.Port, subset.Addresses[0].IP, port.Port, endpoint.Name)
+				go proxyer.Proxyer(
+					localIp.String(),
+					port.Port,
+					subset.Addresses[0].IP, // assume that if there are multiple endpoint remote IPs then the first one is acceptable
+					port.Port)
+			}
+		}
+	}
+
+	HostModifier := fwdhosts.HostModifierOpts{
+		HostFile:   svcFwd.Hostfile,
+		ClusterN:   svcFwd.ClusterN,
+		NamespaceN: svcFwd.NamespaceN,
+		Domain:     svcFwd.Domain,
+		Service:    svcFwd.Svc.Name,
+		Namespace:  svcFwd.Svc.Namespace,
+		Context:    svcFwd.Context,
+		LocalIp:    localIp,
+		Hosts:      []string{},
+	}
+	// cleanup on the stopChannel signal
+	go func() {
+		<-svcFwd.DoneChannel
+		HostModifier.RemoveHosts()
+		HostModifier.RemoveInterfaceAlias()
+		// TODO: signal close?
+	}()
+	HostModifier.AddHosts()
+	return nil
+}
+
 func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 	endpoint, err := svcFwd.ClientSet.CoreV1().Endpoints(svcFwd.Svc.Namespace).Get(context.TODO(), svcFwd.Svc.Name, metav1.GetOptions{})
 	if err != nil {
@@ -164,6 +217,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 		}
 	}
 
+	// TODO: What about pods in other namespaces?
 	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -176,10 +230,16 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 
 	podsEligible := make([]v1.Pod, 0, len(pods.Items))
 
+	found := false
 	for _, pod := range pods.Items {
 		if containsAddress(addresses, pod.Status.PodIP) && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
 			podsEligible = append(podsEligible, pod)
+			found = true
 		}
+	}
+	if !found { // no pods for this service
+		_ = svcFwd.ProxyToPodlessService(endpoint)
+		return nil
 	}
 
 	return podsEligible
@@ -189,7 +249,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 // the forwarding setup for that or those pod(s). It will remove pods in-mem
 // that are no longer returned by k8s, should these not be correctly deleted.
 func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
-	sync := func() {
+	syncKey := func() {
 
 		defer func() { svcFwd.LastSyncedAt = time.Now() }()
 
@@ -200,10 +260,13 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 			k8sPods = svcFwd.GetPodsForService()
 		}
 
+		if k8sPods == nil {
+			return
+		} // if k8sPods is nil, this is a pod-less service.
 		// If no pods are found currently. Will try again next re-sync period.
 		if len(k8sPods) == 0 {
 			log.Warnf("No Running Pods returned for service %s", svcFwd)
-			if !svcFwd.Headless { // if a headless sevice then we should not return since it will need to be removed if no pods are present
+			if !svcFwd.Headless { // if a headless service then we should not return since it will need to be removed if no pods are present
 				return
 			}
 		}
@@ -227,7 +290,6 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 		// port-forward the first pod as service name. headless service not only
 		// forward first Pod as service name, but also port-forward all pods.
 		if len(k8sPods) != 0 {
-
 			// if this is a headless service forward the first pod from the
 			// service name, then subsequent pods from their pod name
 			if svcFwd.Headless {
@@ -271,12 +333,11 @@ func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 	if force || time.Since(svcFwd.LastSyncedAt) > 5*time.Minute {
 		// Replace current debounced function with no-op
 		svcFwd.SyncDebouncer(func() {})
-
 		// Do the syncing work
-		sync()
+		syncKey()
 	} else {
 		// Queue sync
-		svcFwd.SyncDebouncer(sync)
+		svcFwd.SyncDebouncer(syncKey)
 	}
 }
 
@@ -368,7 +429,18 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 				},
 				PortForwardHelper: &fwdport.PortForwardHelperImpl{},
 			}
-			pfo.HostsOperator = fwdport.PortForwardOptsHostsOperator{Pfo: pfo}
+
+			pfo.HostModifier = fwdhosts.HostModifierOpts{
+				HostFile:   svcFwd.Hostfile,
+				ClusterN:   svcFwd.ClusterN,
+				NamespaceN: svcFwd.NamespaceN,
+				Domain:     svcFwd.Domain,
+				Service:    svcName,
+				Namespace:  pod.Namespace,
+				Context:    svcFwd.Context,
+				LocalIp:    localIp,
+				Hosts:      []string{},
+			}
 
 			// If port-forwarding on pod under exact port is already configured, then skip it
 			if runningPortForwards := svcFwd.GetServicePodPortForwards(pfo.Service); len(runningPortForwards) > 0 && svcFwd.contains(runningPortForwards, pfo) {
@@ -398,6 +470,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 			)
 
 			pfo.LocalIp = localIp
+			pfo.HostModifier.LocalIp = localIp
 
 			// Fire and forget. The stopping is done in the service.Shutdown() method.
 			go func() {
