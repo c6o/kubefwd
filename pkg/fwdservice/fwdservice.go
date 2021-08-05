@@ -157,7 +157,7 @@ func (svcFwd *ServiceFWD) ProxyToPodlessService(endpoint *v1.Endpoints) error {
 	for _, subset := range endpoint.Subsets {
 		for _, port := range subset.Ports {
 			if containsPort(servicePorts, port.Port) {
-				log.Printf("Endpoint-Proxy: from %s:%d to %s:%d for endpoint %s", localIp.String(), port.Port, subset.Addresses[0].IP, port.Port, endpoint.Name)
+				log.Printf("Endpoint-Proxy: from %s:%d to %s:%d for podless endpoint %s", localIp.String(), port.Port, subset.Addresses[0].IP, port.Port, endpoint.Name)
 				go proxyer.Proxyer(
 					localIp.String(),
 					port.Port,

@@ -474,19 +474,19 @@ func (waiter *HeadlessServiceWaiterImpl) WatchHeadlessService(stopChannel <-chan
 		}
 		switch event.Type {
 		case watch.Added: // add the tunnel
-			log.Infof("Endpoint %s added. ", service.ObjectMeta.Name)
+			log.Infof("Endpoint for headless service %s added. ", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(false)
 			break
 		case watch.Modified: // update the tunnel
-			log.Infof("Endpoint %s modified.", service.ObjectMeta.Name)
+			log.Infof("Endpoint for headless service %s modified.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Deleted: // remove the tunnel
-			log.Infof("Endpoint %s deleted.", service.ObjectMeta.Name)
+			log.Infof("Endpoint for headless service %s deleted.", service.ObjectMeta.Name)
 			go waiter.ServiceFwd.SyncPodForwards(true)
 			break
 		case watch.Error:
-			log.Errorf("ENDPOINT: Service %s, Endpoint in error.", service.ObjectMeta.Name)
+			log.Errorf("Endpoint for headless service %s has error.", service.ObjectMeta.Name)
 			break
 		}
 	}
@@ -538,7 +538,7 @@ func (opts *NamespaceOpts) AddServiceHandler(obj interface{}) {
 
 	// TODO: is the selector necessary?
 	if headless {
-		log.Warnf("Headless service found: %s.%s\n", svc.Name, svc.Namespace)
+		//log.Warnf("Headless service found: %s.%s\n", svc.Name, svc.Namespace)
 		go opts.EndpointWatcher.WatchHeadlessService(svcfwd.DoneChannel, svc)
 		fwdsvcregistry.Add(svcfwd, false)
 	} else {
