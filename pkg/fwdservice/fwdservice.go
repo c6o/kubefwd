@@ -3,6 +3,7 @@ package fwdservice
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 	"net"
 	"strconv"
 	"sync"
@@ -217,7 +218,7 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 		}
 	}
 
-	// TODO: What about pods in other namespaces?
+	// TODO: Implement pods in other namespaces
 	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -237,9 +238,19 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 			found = true
 		}
 	}
+
 	if !found { // no pods for this service
-		_ = svcFwd.ProxyToPodlessService(endpoint)
-		return nil
+		listOptions := metav1.ListOptions{}
+		label := labels.SelectorFromSet(map[string]string{"app": svcFwd.Svc.Name})
+		listOptions.LabelSelector = label.String()
+		pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOptions)
+		if err != nil || len(pods.Items) != 1 {
+			// No pod found for this endpoint, start a local proxy to service this endpoint.
+			_ = svcFwd.ProxyToPodlessService(endpoint)
+			return nil
+		}
+		podForService := pods.Items[0]
+		podsEligible = append(podsEligible, podForService)
 	}
 
 	return podsEligible
