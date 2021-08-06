@@ -3,11 +3,13 @@ package fwdservice
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/labels"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/c6o/kubefwd/cmd/kubefwd/proxyer"
 	"github.com/c6o/kubefwd/pkg/fwdhosts"
@@ -208,11 +210,13 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 	}
 
 	// now capture the addresses of subsets with matching ports
+	var matches []string
 	var addresses []v1.EndpointAddress
 	for _, subset := range endpoint.Subsets {
 		for _, port := range subset.Ports {
 			if containsPort(servicePorts, port.Port) {
 				addresses = append(addresses, subset.Addresses...)
+				matches = append(matches, fmt.Sprintf("%s:%d", subset.Addresses[0].IP, port.Port))
 				break
 			}
 		}
@@ -230,31 +234,36 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 	}
 
 	podsEligible := make([]v1.Pod, 0, len(pods.Items))
-
-	found := false
 	for _, pod := range pods.Items {
 		if containsAddress(addresses, pod.Status.PodIP) && (pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning) {
 			podsEligible = append(podsEligible, pod)
-			found = true
 		}
 	}
 
-	if !found { // no pods for this service
-		listOptions := metav1.ListOptions{}
-		podDecoyName := fmt.Sprintf("decoy-%s-%s-%d",
-			svcFwd.Svc.Name,
-			endpoint.Subsets[0].Addresses[0].IP,
-			endpoint.Subsets[0].Ports[0].Port )
-		label := labels.SelectorFromSet(map[string]string{"system.codezero.io/decoy": podDecoyName})
-		listOptions.LabelSelector = label.String()
-		pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOptions)
-		if err != nil || len(pods.Items) != 1 {
-			// No pod found for this endpoint, start a local proxy to service this endpoint.
-			_ = svcFwd.ProxyToPodlessService(endpoint)
-			return nil
+	if len(podsEligible) == 0 { // no pods for this service
+		for _, match := range matches {
+			listOptions := metav1.ListOptions{}
+			expectedProxyPodLabelValue := fmt.Sprintf("decoy-%s-%s-%s",
+				svcFwd.Svc.Name,
+				strings.Split(match, ":")[0],
+				strings.Split(match, ":")[1])
+			label := labels.SelectorFromSet(map[string]string{"system.codezero.io/decoy": expectedProxyPodLabelValue})
+			listOptions.LabelSelector = label.String()
+			proxyPods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOptions)
+			if err != nil {
+				log.Errorf("Could not retrieve proxy pods by label: %s", err)
+				return nil
+			}
+
+			if len(proxyPods.Items) == 0 {
+				log.Infof("No proxy pod found for label (%s:%s), starting a local proxy instead.", "system.codezero.io/decoy", expectedProxyPodLabelValue)
+				_ = svcFwd.ProxyToPodlessService(endpoint)
+				return nil
+			} else if len(proxyPods.Items) > 1 {
+				log.Warnf("Found more than one (%d) matching proxy pod for label (%s:%s)", len(proxyPods.Items), "system.codezero.io/decoy", expectedProxyPodLabelValue)
+			}
+			podsEligible = append(podsEligible, proxyPods.Items[0]) // even if there are multiple
 		}
-		podForService := pods.Items[0]
-		podsEligible = append(podsEligible, podForService)
 	}
 
 	return podsEligible
