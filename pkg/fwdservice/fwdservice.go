@@ -241,7 +241,11 @@ func (svcFwd *ServiceFWD) GetPodsForHeadlessService() []v1.Pod {
 
 	if !found { // no pods for this service
 		listOptions := metav1.ListOptions{}
-		label := labels.SelectorFromSet(map[string]string{"app": svcFwd.Svc.Name})
+		podDecoyName := fmt.Sprintf("decoy-%s-%s-%d",
+			svcFwd.Svc.Name,
+			endpoint.Subsets[0].Addresses[0].IP,
+			endpoint.Subsets[0].Ports[0].Port )
+		label := labels.SelectorFromSet(map[string]string{"system.codezero.io/decoy": podDecoyName})
 		listOptions.LabelSelector = label.String()
 		pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOptions)
 		if err != nil || len(pods.Items) != 1 {
