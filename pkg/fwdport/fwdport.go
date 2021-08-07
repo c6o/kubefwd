@@ -110,6 +110,8 @@ type PortForwardOpts struct {
 	StateWaiter       PodStateWaiter
 	PortForwardHelper PortForwardHelper
 	HostModifier fwdhosts.HostModifierOpts
+
+	Headless bool
 }
 
 type pingingDialer struct {
@@ -170,7 +172,7 @@ func PortForward(pfo *PortForwardOpts) error {
 
 	localNamedEndPoint := fmt.Sprintf("%s:%s", pfo.Service, pfo.LocalPort)
 
-	if pfo.getBrothersInPodsAmount() == 1 {
+	if pfo.Headless || pfo.getBrothersInPodsAmount() == 1 {
 		pfo.HostModifier.AddHosts()
 	}
 
@@ -238,7 +240,7 @@ func PortForward(pfo *PortForwardOpts) error {
 // shutdown removes port-forward from ServiceFwd and removes hosts entries if it's necessary
 func (pfo PortForwardOpts) shutdown() {
 	pfo.ServiceFwd.RemoveServicePodByPort(pfo.String(), pfo.PodPort, true)
-	if pfo.getBrothersInPodsAmount() == 0 {
+	if pfo.Headless || pfo.getBrothersInPodsAmount() == 0 {
 		pfo.HostModifier.RemoveHosts()
 	}
 	pfo.HostModifier.RemoveInterfaceAlias()
